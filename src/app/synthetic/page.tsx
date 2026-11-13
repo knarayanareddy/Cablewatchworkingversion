@@ -1,0 +1,2 @@
+import CableWatch from '@/components/CableWatch';
+export default function Page(){return <main className="mx-auto max-w-7xl p-5"><p><a href="/">← Home</a></p><h1 className="my-4 text-3xl font-bold">Original synthetic Cable Watch</h1><div className="my-4 rounded border border-amber-500 bg-amber-50 p-4">Fictional data and geography. Its post-hoc evaluation section can reveal future outcomes during replay. Do not treat this screen as a causal real-data evaluation.</div><CableWatch/></main>}

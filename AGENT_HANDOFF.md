@@ -1,0 +1,12 @@
+# Handoff for continued work
+
+Read README.md. This is a separate Next.js copy containing the original synthetic Cable Watch component (`src/components/CableWatch.tsx`, `src/lib/cablewatch/`) and a new real-data page (`src/app/real/page.tsx`). The local read-only Python service and importer are under `python/`. The real page is connected to the importer through a SQLite index, but **does not use the original synthetic detector, episodes, evaluation or planner**. Do not represent this as a full real-data behavior detector.
+
+## Immediate tasks with the user
+1. Inspect their exact archive header and confirm units, timestamp meaning/timezone and provider terms. Do not request or download the large ZIP here; run locally with permission. Check space, including ZIP, npm dependencies, SQLite, intermediate and temp files.
+2. Run a small first-row sample for the intended area. Inspect the quality report, missing values, resulting sample time span and database size. Verify a few points independently against source rows. Then process the full day if space permits.
+3. Obtain a justified bounding box and correctly licensed/provenanced WGS84 cable route. Do not use synthetic geometry as real geography. Add validated geodesic/projection calculations and quantify spatial uncertainty before drawing conclusions.
+4. To develop actual Cable Watch behavior scoring for real AIS, first decouple its fictional fixture geography, class baselines, fishing/ferry adjustments, and ground-truth evaluation from its detector. Refactor null/saturated values and unknown class explicitly. Use a resource-bounded server-side replay rather than loading all points into a browser or applying the synthetic `replay` loop to a full file. Isolate all post-hoc truth from replay. Add prefix causality tests, ordering/duplicate and timestamp-availability tests; document limits and compare against a simple baseline.
+5. Pre-register settings and evaluate incident replay, surrounding-week workload and a held-out day separately. Alerts are candidates to review; AIS alone does not show intent, anchor state or damage. Do not call unlabelled alerts verified false positives or claim real-time lead time from archived file publication.
+
+Safety/security: local services are unauthenticated and must stay bound to loopback; never deploy these routes publicly without security review. This is not an asset-tasking system. Keep original files and source data private as needed and never transmit datasets without the user's permission.

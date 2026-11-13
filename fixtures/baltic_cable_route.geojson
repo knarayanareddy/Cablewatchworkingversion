@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "name": "Baltic Submarine Infrastructure Sample",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Baltic Power Link Corridor",
+        "voltage_kv": 450,
+        "type": "HVDC Submarine Cable",
+        "description": "Representative corridor through Arkona Basin / South of Bornholm"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [13.82, 54.82],
+          [13.95, 54.94],
+          [14.05, 55.04],
+          [14.18, 55.15],
+          [14.32, 55.28]
+        ]
+      }
+    }
+  ]
+}
