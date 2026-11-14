@@ -1,9 +1,170 @@
 @import "tailwindcss";
 
-:focus-visible {
-  outline: 3px solid #1d4ed8;
-  outline-offset: 2px;
+@theme {
+  --font-sans: "Inter", "Open Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Surfaces (deep navy, flight-tracker style) */
+  --color-ink-950: #080d16;
+  --color-ink-900: #0d1420;
+  --color-ink-850: #111a2a;
+  --color-ink-800: #162033;
+  --color-ink-700: #1f2b42;
+  --color-ink-600: #2b3a57;
+  --color-ink-500: #3d4f73;
+
+  /* Text */
+  --color-mute: #8592ab;
+  --color-soft: #b4bfd3;
+
+  /* Accents */
+  --color-brand: #ffc400;
+  --color-brand-dim: #b88f00;
+  --color-cue: #ff4259;
+  --color-review: #ff9f1a;
+  --color-ok: #2ee6a6;
+  --color-sky: #3db8ff;
+  --color-violet: #a98bff;
+  --color-pink: #ff6fb1;
 }
-html {
-  scroll-behavior: smooth;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: #e8edf7;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Scrollbars that match the dark UI */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Range inputs */
+input[type="range"].fr-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--color-ink-600);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].fr-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-brand);
+  border: 2px solid var(--color-ink-950);
+  box-shadow: 0 0 0 1px var(--color-brand);
+}
+input[type="range"].fr-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-brand);
+  border: 2px solid var(--color-ink-950);
+}
+
+/* Map animations */
+@keyframes halo {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.vessel-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: halo 1.9s ease-out infinite;
+}
+
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.radar-sweep {
+  animation: sweep 3.2s linear infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.blink {
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.slide-in-right {
+  animation: slide-in-right 0.22s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.map-label {
+  paint-order: stroke;
+  stroke: #080d16;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vessel-halo,
+  .radar-sweep,
+  .blink {
+    animation: none;
+  }
 }
