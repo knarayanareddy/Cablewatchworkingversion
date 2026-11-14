@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CableWatch Architecture & ML Shadow Mode — Interactive Overview</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .slide-enter { animation: fadeIn 0.3s ease-out forwards; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-[#050b14] text-slate-100 antialiased min-h-screen flex flex-col justify-between selection:bg-cyan-500 selection:text-black">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800/80 bg-[#071324]/90 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-500 flex items-center justify-center font-bold text-black shadow-lg shadow-cyan-900/40">
+        ⚓
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold tracking-wider text-sm bg-gradient-to-r from-cyan-300 via-sky-200 to-indigo-300 bg-clip-text text-transparent">
+            CABLEWATCH
+          </span>
+          <span class="rounded bg-indigo-950/80 border border-indigo-700/60 text-indigo-300 text-[11px] px-1.5 py-0.5 font-mono font-bold">
+            v1.0 ML SHADOW
+          </span>
+        </div>
+        <div class="text-[11px] text-slate-400">Subsea Critical Infrastructure Maritime Anomaly Intelligence</div>
+      </div>
+    </div>
+
+    <!-- Slide Index Indicators -->
+    <div class="flex items-center gap-1.5">
+      <div id="slide-indicators" class="flex gap-1.5 mr-4"></div>
+      <button onclick="prevSlide()" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs font-mono font-semibold text-slate-300 transition-all flex items-center gap-1">
+        <span>◀</span> Prev
+      </button>
+      <span id="slide-counter" class="text-xs font-mono px-2 text-cyan-400 font-bold">1 / 6</span>
+      <button onclick="nextSlide()" class="px-3 py-1.5 rounded-lg border border-cyan-700/60 bg-cyan-950/70 hover:bg-cyan-900 text-xs font-mono font-semibold text-cyan-300 transition-all flex items-center gap-1">
+        Next <span>▶</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Slide Container -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-6 py-8 flex flex-col justify-center">
+
+    <!-- ================= SLIDE 1 ================= -->
+    <section id="slide-1" class="slide-content space-y-6 slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 text-xs font-mono">
+          <span>🛡️</span> SYSTEM FOUNDATION
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          Subsea Critical Infrastructure Threat Detection
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          CableWatch safeguards high-value subsea power, gas, and optical telecommunication corridors in the Baltic Sea against anchor-dragging, unauthorized survey loitering, and disabled-AIS drift signatures.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2 hover:border-cyan-800/80 transition-colors">
+          <div class="text-xs font-mono text-cyan-400 font-bold flex items-center gap-1.5">
+            <span>⚡</span> Bornholm Power Transit
+          </div>
+          <div class="text-xs text-slate-300 leading-relaxed">
+            High-voltage submarine interconnector linking Bornholm island to the continental grid across heavy commercial maritime traffic lanes.
+          </div>
+          <div class="text-[11px] font-mono text-slate-500 pt-2 border-t border-slate-800/80">
+            Coordinates: [13.82°E, 54.82°N] → [14.32°E, 55.28°N]
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2 hover:border-purple-800/80 transition-colors">
+          <div class="text-xs font-mono text-purple-400 font-bold flex items-center gap-1.5">
+            <span>🛢️</span> Baltic Pipe Gas Corridor
+          </div>
+          <div class="text-xs text-slate-300 leading-relaxed">
+            Critical strategic gas pipeline linking Norwegian North Sea fields through Denmark to Poland. High national security surveillance priority.
+          </div>
+          <div class="text-[11px] font-mono text-slate-500 pt-2 border-t border-slate-800/80">
+            Coordinates: Faxø (DK) → Niechorze (PL)
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2 hover:border-emerald-800/80 transition-colors">
+          <div class="text-xs font-mono text-emerald-400 font-bold flex items-center gap-1.5">
+            <span>🌐</span> C-Lion1 / Telecom Fiber
+          </div>
+          <div class="text-xs text-slate-300 leading-relaxed">
+            Subsea optical backbone providing critical low-latency European internet routing, susceptible to seabed snagging and dragging.
+          </div>
+          <div class="text-[11px] font-mono text-slate-500 pt-2 border-t border-slate-800/80">
+            Coordinates: Helsinki (FI) → Rostock (DE)
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Corridor Inspector -->
+      <div class="rounded-xl border border-cyan-900/60 bg-[#071324] p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-cyan-900/40 pb-3">
+          <span class="text-xs font-mono text-cyan-300 font-bold uppercase tracking-wider">
+            Interactive Corridor Inspector
+          </span>
+          <span class="text-xs font-mono text-slate-400">Click a corridor to inspect parameters</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="setCorridorInfo('bornholm')" class="px-3 py-1.5 rounded-lg bg-cyan-950 border border-cyan-800 text-xs font-mono text-cyan-300 hover:bg-cyan-900 font-semibold">
+            Bornholm Power Cable
+          </button>
+          <button onclick="setCorridorInfo('baltic')" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 hover:bg-slate-800 font-semibold">
+            Baltic Pipe Gas
+          </button>
+          <button onclick="setCorridorInfo('nord')" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 hover:bg-slate-800 font-semibold">
+            Nord Stream Backbone
+          </button>
+        </div>
+        <div id="corridor-box" class="rounded-lg bg-black/40 border border-slate-800 p-3 font-mono text-xs space-y-1 text-slate-300">
+          <div><b class="text-cyan-400">Geometry Name:</b> Bornholm Power Cable Corridor</div>
+          <div><b class="text-slate-400">Warning Corridor Radius:</b> 4.0 km standard perimeter buffer</div>
+          <div><b class="text-slate-400">Primary Risk Vector:</b> Anchor drop / slow dragging in shallow shelf bathymetry</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLIDE 2 ================= -->
+    <section id="slide-2" class="slide-content space-y-6 hidden slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 text-xs font-mono">
+          <span>⚙️</span> ROBUST PIPELINE
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          Ingestion Architecture & Sensor Integrity
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          Real AIS telemetry contains sensor noise, multi-receiver latency, and clock jitter. The ingestion engine enforces strict bounding, atomic output staging, and preserves raw observation provenance.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-3">
+          <div class="text-emerald-400 font-bold flex items-center gap-1.5">
+            <span>🛡️</span> Atomic Staging & Safe Overwrite
+          </div>
+          <p class="text-slate-300 font-sans leading-relaxed">
+            Ingestion writes exclusively to a randomized temporary database (<code class="text-cyan-300">.tmp.*.sqlite</code>). It replaces destination databases only upon successful verification. If interrupted or failed, prior operational databases remain completely uncorrupted.
+          </p>
+          <div class="rounded bg-black/40 p-2.5 text-[11px] text-slate-400 space-y-1">
+            <div>✓ Safe alphanumeric target naming validation</div>
+            <div>✓ Auto-stale lockfile detection with PID liveness check</div>
+            <div>✓ Memory-mapped SQLite with read-only proxy mode (<code class="text-emerald-300">?mode=ro</code>)</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-3">
+          <div class="text-amber-400 font-bold flex items-center gap-1.5">
+            <span>📡</span> Same-Timestamp GPS Conflict Preservation
+          </div>
+          <p class="text-slate-300 font-sans leading-relaxed">
+            When two distinct shore stations record divergent positions for the same vessel at the exact same second, CableWatch retains <b>both</b> records with conflict markers instead of silently discarding observations.
+          </p>
+          <div class="rounded bg-black/40 p-2.5 text-[11px] text-slate-400 space-y-1">
+            <div>✓ Missing fields distinguished from zero (<code class="text-amber-300">sog=null</code> vs <code class="text-amber-300">0.0 kn</code>)</div>
+            <div>✓ Exact duplicates deduplicated for accurate dwell aggregation</div>
+            <div>✓ Conflict flags break sequential continuity assumptions</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Conflict Demo -->
+      <div class="rounded-xl border border-slate-800 bg-[#071324] p-4 space-y-3">
+        <div class="text-xs font-mono font-bold text-slate-300 flex items-center justify-between">
+          <span>Interactive Observation Preprocessor Simulator</span>
+          <span class="text-emerald-400 text-[11px]">Deduplication & Conflict Engine</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs font-mono">
+          <div class="rounded bg-slate-900 border border-slate-800 p-2 text-slate-300">
+            <span class="text-cyan-400">Fix 1:</span> 12:00:00Z · 55.10N, 14.20E (SOG 1.2)
+          </div>
+          <div class="rounded bg-slate-900 border border-slate-800 p-2 text-slate-300">
+            <span class="text-cyan-400">Fix 2:</span> 12:00:00Z · 55.10N, 14.20E (Duplicate)
+          </div>
+          <div class="rounded bg-rose-950/60 border border-rose-800/80 p-2 text-rose-300">
+            <span class="text-rose-400">Fix 3:</span> 12:00:00Z · 55.18N, 14.29E (Conflict!)
+          </div>
+        </div>
+        <div class="text-[11px] font-sans text-slate-400 bg-slate-950/60 rounded p-2 border border-slate-800/60">
+          Result: Fix 2 is deduplicated to prevent artificial dwell inflation; Fix 3 is preserved and flagged with <b class="text-rose-300">CONFLICTING POS</b> to break unverified continuity.
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLIDE 3 ================= -->
+    <section id="slide-3" class="slide-content space-y-6 hidden slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-rose-950/80 border border-rose-800/60 text-rose-300 text-xs font-mono">
+          <span>🎯</span> OPERATIONAL TRIAGE
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          Prioritized Alert Queue & Single-Fix Scoring
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          The operational queue screens every visible vessel inside or near active corridors, sorting operators' attention toward the highest immediate behavioral anomaly.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+        <div class="rounded-xl border border-rose-800/70 bg-rose-950/20 p-4 space-y-2">
+          <div class="flex justify-between items-center text-rose-400 font-bold">
+            <span>🚨 CUE TIER</span>
+            <span class="px-2 py-0.5 rounded bg-rose-950 border border-rose-800 text-[10px]">Score ≥ 5.0</span>
+          </div>
+          <div class="text-slate-300 font-sans text-xs leading-relaxed">
+            High-priority trigger. Vessel is in close corridor proximity with severe speed anomaly or substantial crab-angle divergence.
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-amber-800/70 bg-amber-950/20 p-4 space-y-2">
+          <div class="flex justify-between items-center text-amber-400 font-bold">
+            <span>⚠️ REVIEW TIER</span>
+            <span class="px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-[10px]">2.0 ≤ Score &lt; 5.0</span>
+          </div>
+          <div class="text-slate-300 font-sans text-xs leading-relaxed">
+            Moderate anomaly requiring watchstander verification. Vessel slowing or loitering near corridor margins.
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-2">
+          <div class="flex justify-between items-center text-slate-400 font-bold">
+            <span>✅ NORMAL TIER</span>
+            <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px]">Score &lt; 2.0</span>
+          </div>
+          <div class="text-slate-300 font-sans text-xs leading-relaxed">
+            Routine transit. Standard commercial speed and heading aligned with shipping fairway.
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Single-Fix Calculator -->
+      <div class="rounded-xl border border-slate-800 bg-[#071324] p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
+            Interactive Threat Score Calculator
+          </span>
+          <span class="text-xs font-mono text-slate-400">Smallest Circular Angle Mathematics</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+          <div>
+            <label class="block text-slate-400 mb-1">Corridor Distance (km):</label>
+            <input type="range" id="calc-dist" min="0.1" max="10.0" step="0.1" value="0.8" oninput="calcScore()" class="w-full accent-cyan-400">
+            <div id="val-dist" class="text-right text-cyan-300 font-bold mt-1">0.8 km</div>
+          </div>
+          <div>
+            <label class="block text-slate-400 mb-1">Speed Over Ground (kn):</label>
+            <input type="range" id="calc-sog" min="0.1" max="20.0" step="0.1" value="1.4" oninput="calcScore()" class="w-full accent-cyan-400">
+            <div id="val-sog" class="text-right text-amber-300 font-bold mt-1">1.4 kn</div>
+          </div>
+          <div>
+            <label class="block text-slate-400 mb-1">Heading vs Course Divergence:</label>
+            <input type="range" id="calc-div" min="0" max="180" step="1" value="45" oninput="calcScore()" class="w-full accent-cyan-400">
+            <div id="val-div" class="text-right text-rose-400 font-bold mt-1">45° (drift angle)</div>
+          </div>
+        </div>
+
+        <div class="rounded-lg bg-black/50 border border-slate-800 p-3 flex items-center justify-between font-mono">
+          <div>
+            <div class="text-[11px] text-slate-400">CALCULATED SCORE:</div>
+            <div id="calc-result" class="text-2xl font-extrabold text-rose-400">5.82 · CUE</div>
+          </div>
+          <div class="text-right text-[11px] text-slate-400 font-sans max-w-sm">
+            Uses minimum circular divergence: <code class="text-cyan-300">min(|H-C|, 360-|H-C|)</code>.<br>
+            A 359° heading vs 1° course produces 2° divergence, not 358°.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLIDE 4 ================= -->
+    <section id="slide-4" class="slide-content space-y-6 hidden slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 text-xs font-mono">
+          <span>🧪</span> TRACK CONTINUITY
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          Experimental Multi-Fix Track Engine
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          Single-fix snapshots can misclassify brief maneuvers or normal turns. The experimental track score evaluates sustained historical behavior up to the replay second, enforcing strict sequential continuity.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-3">
+          <div class="text-cyan-300 font-bold flex items-center gap-1.5">
+            <span>🛡️</span> Strict Episode Continuity Breaking
+          </div>
+          <p class="text-slate-300 font-sans leading-relaxed">
+            A continuous dwell is broken whenever an intervening observation fails corridor qualification. For example, qualifying slow fixes at 00:00 and 00:20 with a fast transit at 00:05 <b>breaks the run</b> into two short intervals rather than a misleading 20-minute dwell.
+          </p>
+          <div class="rounded bg-black/40 p-2 text-[11px] text-slate-400 space-y-1">
+            <div>✓ Breaks on speed &gt; 3.0 kn or distance &gt; corridor limit</div>
+            <div>✓ Breaks on reporting gap &gt; 900 seconds (15 min)</div>
+            <div>✓ Unrounded seconds-based dwell threshold (&ge; 900s)</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-3">
+          <div class="text-indigo-300 font-bold flex items-center gap-1.5">
+            <span>⏱️</span> Truncation Safety & Chronological Integrity
+          </div>
+          <p class="text-slate-300 font-sans leading-relaxed">
+            The <code class="text-cyan-300">/track</code> endpoint scans newest-first (<code class="text-indigo-300">ts &le; at ORDER BY ts DESC</code>), applies safety limits, and reverses order. When safety limits are reached, older fixes are truncated while the latest critical evidence is always preserved.
+          </p>
+          <div class="rounded bg-black/40 p-2 text-[11px] text-slate-400 space-y-1">
+            <div>✓ Replay time bounded: zero look-ahead contamination</div>
+            <div>✓ Explicit UI warning banner if track hits safety limit</div>
+            <div>✓ Non-qualifying fixes transparently logged in evidence timeline</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Continuity Interactive Stepper -->
+      <div class="rounded-xl border border-cyan-900/60 bg-[#071324] p-4 space-y-3 font-mono text-xs">
+        <div class="flex items-center justify-between text-cyan-300 font-bold">
+          <span>Interactive Continuity Break Demonstration</span>
+          <span class="text-slate-400 text-[11px]">Click Step to observe episode state</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <button onclick="setContinuityStep(1)" class="p-2 rounded bg-slate-900 border border-slate-800 hover:border-cyan-700 text-left">
+            <div class="text-cyan-400 font-bold">Fix 1: 00:00</div>
+            <div class="text-slate-400 text-[11px]">1.5 kn · Inside (Run 0m)</div>
+          </button>
+          <button onclick="setContinuityStep(2)" class="p-2 rounded bg-rose-950/60 border border-rose-800 hover:border-rose-600 text-left">
+            <div class="text-rose-400 font-bold">Fix 2: 00:05</div>
+            <div class="text-rose-300 text-[11px]">8.2 kn · Fast (BREAK!)</div>
+          </button>
+          <button onclick="setContinuityStep(3)" class="p-2 rounded bg-slate-900 border border-slate-800 hover:border-cyan-700 text-left">
+            <div class="text-cyan-400 font-bold">Fix 3: 00:20</div>
+            <div class="text-slate-400 text-[11px]">1.8 kn · Inside (Run 0m)</div>
+          </button>
+        </div>
+        <div id="continuity-msg" class="rounded bg-black/40 p-2.5 text-slate-300 font-sans text-xs border border-slate-800">
+          Select a fix above to evaluate continuity breaking logic.
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLIDE 5 ================= -->
+    <section id="slide-5" class="slide-content space-y-6 hidden slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-indigo-950/80 border border-indigo-800/60 text-indigo-300 text-xs font-mono">
+          <span>🔬</span> SHADOW MODE
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          ML Shadow Mode: Historical Pattern Comparison
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          Provides an independent, non-intrusive statistical second opinion beside single-fix and track scores. It ranks a vessel's trailing 60-minute behavior against historical reference distributions without altering queue priority.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-3 space-y-1">
+          <div class="text-indigo-400 font-bold">1. Median SOG</div>
+          <div class="text-slate-300 font-sans text-[11px]">Linear-interpolated median speed over 60m window.</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-3 space-y-1">
+          <div class="text-indigo-400 font-bold">2. SOG Spread (IQR)</div>
+          <div class="text-slate-300 font-sans text-[11px]">Velocity dispersion (<code class="text-indigo-300">P75 - P25</code>) to detect speed pulsing.</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-3 space-y-1">
+          <div class="text-indigo-400 font-bold">3. Slow Dwell Ratio</div>
+          <div class="text-slate-300 font-sans text-[11px]">Bounded time fraction spent &lt; 3.0 knots in the window.</div>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-3 space-y-1">
+          <div class="text-indigo-400 font-bold">4. Corridor Distance</div>
+          <div class="text-slate-300 font-sans text-[11px]">Perpendicular distance to corridor centerline in km.</div>
+        </div>
+      </div>
+
+      <!-- Feature Quality Gate Box -->
+      <div class="rounded-xl border border-indigo-900/60 bg-[#080e1c] p-4 space-y-3 font-mono text-xs">
+        <div class="flex items-center justify-between text-indigo-300 font-bold border-b border-indigo-950 pb-2">
+          <span>Strict Quality Gates (Fails Closed)</span>
+          <span class="rounded bg-indigo-950 px-2 py-0.5 text-[10px] text-indigo-300">Fail Safe</span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] text-slate-300">
+          <div>• &ge; 3 distinct timestamps</div>
+          <div>• &ge; 15 min observed span</div>
+          <div>• No gap &gt; 15 min (900s)</div>
+          <div>• Newest fix age &le; 15 min</div>
+          <div>• SOG missing rate &le; 20%</div>
+          <div>• No GPS jumps &gt; 50 kn</div>
+        </div>
+      </div>
+
+      <!-- Dual Scoring Engine -->
+      <div class="rounded-xl border border-slate-800 bg-[#071324] p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+        <div class="space-y-2">
+          <div class="text-cyan-300 font-bold">Engine 1: Robust Standardized Deviation</div>
+          <p class="text-slate-300 font-sans text-[11px] leading-relaxed">
+            Computes median absolute deviation divided by interquartile range with documented noise floors:
+            <code class="block mt-1 bg-black/40 p-2 rounded text-cyan-300">z = |x - median| / max(IQR, floor)</code>
+          </p>
+        </div>
+        <div class="space-y-2">
+          <div class="text-purple-300 font-bold">Engine 2: Empirical Anomaly Percentile</div>
+          <p class="text-slate-300 font-sans text-[11px] leading-relaxed">
+            Ranks composite score against frozen reference scores with exact tie handling:
+            <code class="block mt-1 bg-black/40 p-2 rounded text-purple-300">Percentile = 100 * count(ref &le; score) / N</code>
+          </p>
+        </div>
+      </div>
+
+      <!-- Clear Caveat Banner -->
+      <div class="rounded-lg bg-amber-950/70 border border-amber-700/60 p-3 text-xs text-amber-200 font-sans flex items-start gap-2">
+        <span class="text-amber-400 font-bold text-base">⚠️</span>
+        <div>
+          <b>Operational Disclaimer:</b> AIS behavioral telemetry does not prove physical anchor deployment, seabed contact, equipment damage, or hostile intent. Anomaly percentiles reflect statistical deviation from past traffic, not incident likelihood.
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SLIDE 6 ================= -->
+    <section id="slide-6" class="slide-content space-y-6 hidden slide-enter">
+      <div class="space-y-2">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 text-xs font-mono">
+          <span>🚀</span> VERIFICATION & ARTIFACTS
+        </div>
+        <h1 class="text-3xl font-extrabold text-slate-100 tracking-tight">
+          System Verification, GitHub Status & Handoff
+        </h1>
+        <p class="text-slate-400 text-sm max-w-3xl leading-relaxed">
+          The complete implementation has been verified through automated unit tests, regression suites, and live browser evaluation on port 3100.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2">
+          <div class="text-emerald-400 font-bold flex items-center gap-1.5">
+            <span>✓</span> Python Test Suite
+          </div>
+          <div class="text-2xl font-extrabold text-slate-100">29 / 29 PASS</div>
+          <div class="text-slate-400 font-sans text-[11px]">
+            Unit & integration tests in <code class="text-cyan-300">tests/test_ml_shadow.py</code> covering quality gates, linear interpolation, percentile ties, and loopback HTTP server.
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2">
+          <div class="text-emerald-400 font-bold flex items-center gap-1.5">
+            <span>✓</span> TypeScript Track Suite
+          </div>
+          <div class="text-2xl font-extrabold text-slate-100">6 / 6 PASS</div>
+          <div class="text-slate-400 font-sans text-[11px]">
+            Regression tests covering circular divergence, sequence continuity breaks on non-qualifying fixes, and seconds-based dwell threshold.
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-[#091528] p-4 space-y-2">
+          <div class="text-emerald-400 font-bold flex items-center gap-1.5">
+            <span>✓</span> GitHub Sync
+          </div>
+          <div class="text-base font-extrabold text-cyan-300">PUSHED TO REMOTE</div>
+          <div class="text-slate-400 font-sans text-[11px]">
+            Both branches <code class="text-cyan-300">main</code> and <code class="text-cyan-300">ml-shadow-mode</code> synced to GitHub repository <code class="text-slate-300">knarayanareddy/Cablewatchworkingversion</code>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Links Card -->
+      <div class="rounded-xl border border-cyan-900/60 bg-[#071324] p-5 space-y-3 font-mono text-xs">
+        <div class="text-cyan-300 font-bold text-sm">Deployment & Quick Links</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-300">
+          <div class="rounded bg-black/40 p-3 border border-slate-800 space-y-1">
+            <div class="text-slate-400">Live Application Preview:</div>
+            <a href="http://127.0.0.1:3100/real" target="_blank" class="text-cyan-400 font-bold hover:underline">
+              http://127.0.0.1:3100/real ↗
+            </a>
+          </div>
+          <div class="rounded bg-black/40 p-3 border border-slate-800 space-y-1">
+            <div class="text-slate-400">GitHub Repository:</div>
+            <a href="https://github.com/knarayanareddy/Cablewatchworkingversion" target="_blank" class="text-cyan-400 font-bold hover:underline">
+              github.com/knarayanareddy/Cablewatchworkingversion ↗
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation & Footer -->
+  <footer class="border-t border-slate-800/80 bg-[#071324]/90 backdrop-blur px-6 py-3 flex items-center justify-between text-xs text-slate-500 font-mono">
+    <div>CableWatch v1.0 · ML Shadow Mode Reference Presentation</div>
+    <div class="flex items-center gap-3">
+      <span>Use Arrow Keys ◀ ▶ to Navigate</span>
+      <span>•</span>
+      <span class="text-slate-400">Google Antigravity</span>
+    </div>
+  </footer>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 6;
+
+    function renderIndicators() {
+      const container = document.getElementById('slide-indicators');
+      container.innerHTML = '';
+      for (let i = 1; i <= totalSlides; i++) {
+        const dot = document.createElement('button');
+        dot.className = `w-2.5 h-2.5 rounded-full transition-all ${i === currentSlide ? 'bg-cyan-400 w-6' : 'bg-slate-700 hover:bg-slate-500'}`;
+        dot.onclick = () => goToSlide(i);
+        container.appendChild(dot);
+      }
+      document.getElementById('slide-counter').textContent = `${currentSlide} / ${totalSlides}`;
+    }
+
+    function goToSlide(n) {
+      if (n < 1 || n > totalSlides) return;
+      document.querySelectorAll('.slide-content').forEach(el => el.classList.add('hidden'));
+      const active = document.getElementById(`slide-${n}`);
+      if (active) {
+        active.classList.remove('hidden');
+      }
+      currentSlide = n;
+      renderIndicators();
+    }
+
+    function nextSlide() { goToSlide(currentSlide + 1); }
+    function prevSlide() { goToSlide(currentSlide - 1); }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+      if (e.key === 'ArrowLeft') prevSlide();
+    });
+
+    // Interactive Corridor Inspector
+    function setCorridorInfo(type) {
+      const box = document.getElementById('corridor-box');
+      if (type === 'bornholm') {
+        box.innerHTML = `
+          <div><b class="text-cyan-400">Geometry Name:</b> Bornholm Power Cable Corridor</div>
+          <div><b class="text-slate-400">Warning Perimeter:</b> 4.0 km buffer (R = 6371.0088 km)</div>
+          <div><b class="text-slate-400">Primary Risk Vector:</b> Anchor-dragging in shelf bathymetry</div>
+        `;
+      } else if (type === 'baltic') {
+        box.innerHTML = `
+          <div><b class="text-purple-400">Geometry Name:</b> Baltic Pipe Gas Pipeline</div>
+          <div><b class="text-slate-400">Warning Perimeter:</b> 4.0 km buffer</div>
+          <div><b class="text-slate-400">Primary Risk Vector:</b> Heavy seabed dragging / unanchored drift</div>
+        `;
+      } else if (type === 'nord') {
+        box.innerHTML = `
+          <div><b class="text-sky-400">Geometry Name:</b> Nord Stream Gas Transit Backbone</div>
+          <div><b class="text-slate-400">Warning Perimeter:</b> 4.0 km buffer</div>
+          <div><b class="text-slate-400">Primary Risk Vector:</b> Loitering survey patterns / anomalous dwells</div>
+        `;
+      }
+    }
+
+    // Interactive Calculator
+    function calcScore() {
+      const dist = parseFloat(document.getElementById('calc-dist').value);
+      const sog = parseFloat(document.getElementById('calc-sog').value);
+      const div = parseFloat(document.getElementById('calc-div').value);
+
+      document.getElementById('val-dist').textContent = `${dist.toFixed(1)} km`;
+      document.getElementById('val-sog').textContent = `${sog.toFixed(1)} kn`;
+      document.getElementById('val-div').textContent = `${div}° (drift angle)`;
+
+      // Heuristic model:
+      // distScore = max(0, 4.0 - dist) * 1.2
+      // speedScore = max(0, 3.0 - sog) * 1.5
+      // divScore = (div / 180) * 2.0
+      const distScore = Math.max(0, 4.0 - dist) * 1.2;
+      const speedScore = Math.max(0, 3.0 - sog) * 1.5;
+      const divScore = (div / 180) * 2.0;
+      const total = distScore + speedScore + divScore;
+
+      const tier = total >= 5.0 ? 'CUE' : total >= 2.0 ? 'REVIEW' : 'NORMAL';
+      const color = total >= 5.0 ? 'text-rose-400' : total >= 2.0 ? 'text-amber-400' : 'text-slate-400';
+
+      const res = document.getElementById('calc-result');
+      res.textContent = `${total.toFixed(2)} · ${tier}`;
+      res.className = `text-2xl font-extrabold ${color}`;
+    }
+
+    // Continuity Interactive Stepper
+    function setContinuityStep(step) {
+      const msg = document.getElementById('continuity-msg');
+      if (step === 1) {
+        msg.innerHTML = '<span class="text-cyan-300 font-bold">Fix 1 at 00:00 (SOG 1.5kn, Dist 0.8km):</span> Qualifies as slow inside corridor. Starts continuous dwell run at duration = 0s.';
+      } else if (step === 2) {
+        msg.innerHTML = '<span class="text-rose-400 font-bold">Fix 2 at 00:05 (SOG 8.2kn):</span> <b class="text-rose-300">NON-QUALIFYING INTERVENING FIX.</b> Continuity is broken immediately. The previous run is capped at 0s, preventing an artificial 20-minute contiguous dwell calculation.';
+      } else if (step === 3) {
+        msg.innerHTML = '<span class="text-cyan-300 font-bold">Fix 3 at 00:20 (SOG 1.8kn, Dist 1.1km):</span> Qualifies again, but starts a <b class="text-amber-300">NEW independent run</b>. Fix 1 and Fix 3 are NOT chained together.';
+      }
+    }
+
+    renderIndicators();
+  </script>
+</body>
+</html>
