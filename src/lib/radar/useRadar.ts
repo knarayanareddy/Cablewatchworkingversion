@@ -123,7 +123,8 @@ export function useRadar() {
         const zips = data.zips || [];
         setDiscoveredZips(zips);
         if (zips.length > 0 && !selectedZipPath) {
-          setSelectedZipPath(zips[0].path);
+          const aisdkZip = zips.find((z: DiscoveredZip) => z.name.toLowerCase().startsWith('aisdk'));
+          setSelectedZipPath((aisdkZip || zips[0]).path);
         }
       }
     } catch {

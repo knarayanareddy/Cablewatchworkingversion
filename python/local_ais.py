@@ -83,8 +83,10 @@ class Handler(BaseHTTPRequestHandler):
     dl=Path.home()/'Downloads'; found_zips=[]
     if dl.is_dir():
      for f in sorted(dl.glob('*.zip'),key=lambda x:x.stat().st_mtime,reverse=True):
-      if 'ais' in f.name.lower() or 'cable' in f.name.lower():
+      name_lower = f.name.lower()
+      if name_lower.startswith('aisdk') or ('ais' in name_lower and 'cable' not in name_lower and 'pipeline' not in name_lower and 'version' not in name_lower):
        found_zips.append({'name':f.name,'path':str(f),'size_mb':round(f.stat().st_size/1e6,1)})
+    found_zips.sort(key=lambda x: (not x['name'].lower().startswith('aisdk'), x['name'].lower()))
     self.sendjson(200,{'zips':found_zips});return
    if p.path=='/datasets':
     work_dir=Path(__file__).resolve().parents[1]/'work'
