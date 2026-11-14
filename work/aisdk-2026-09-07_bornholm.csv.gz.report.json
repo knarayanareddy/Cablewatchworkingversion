@@ -1,0 +1,57 @@
+{
+  "tool_version": "0.1.0",
+  "input_file": "aisdk-2026-09-07.zip",
+  "zip_member": "aisdk-2026-09-07.csv",
+  "zip_member_uncompressed_bytes": 3954645597,
+  "input_zip_bytes": 745903821,
+  "input_sha256": null,
+  "timestamp_interpretation": "Source timestamps interpreted as UTC by explicit user assumption; verify with provider. This is NOT proof of live availability.",
+  "timestamp_source_format": "DD/MM/YYYY HH:MM:SS",
+  "bbox_west_south_east_north": [
+    13.5,
+    54.5,
+    16.0,
+    56.0
+  ],
+  "mobile_filter": "Class A and Class B when mobile column exists; otherwise no mobile-type filter",
+  "column_mapping": {
+    "timestamp": "# Timestamp",
+    "mmsi": "MMSI",
+    "lat": "Latitude",
+    "lon": "Longitude",
+    "mobile": "Type of mobile",
+    "sog": "SOG",
+    "cog": "COG",
+    "heading": "Heading",
+    "type": "Ship type",
+    "name": "Name",
+    "nav": "Navigational status"
+  },
+  "counts": {
+    "rows_read": 21998775,
+    "rejected_outside_bbox": 19228228,
+    "rejected_non_class_a_b": 1793350,
+    "rejected_invalid_position": 21615,
+    "rows_written": 872408,
+    "rejected_bad_mmsi": 83174
+  },
+  "optional_field_quality_counts": {
+    "sog_valid": 872194,
+    "cog_valid": 848868,
+    "heading_valid": 769996,
+    "heading_missing": 102412,
+    "cog_missing": 23540,
+    "sog_missing": 213,
+    "sog_invalid": 1
+  },
+  "min_source_timestamp_utc": "2026-09-07T00:00:00Z",
+  "max_source_timestamp_utc": "2026-09-07T23:59:58Z",
+  "output_compressed_bytes": 14197698,
+  "output_sha256": "a0b1f1b38b5b650b8aa3b6f64778d5dfa094b13f118e26a0e45aa709dc4d5ea5",
+  "size_cap_bytes": 200000000,
+  "truncated_by_row_limit": false,
+  "deduplicated": false,
+  "sorted": false,
+  "availability_time": "not supplied; no live-arrival time inferred",
+  "status": "normalized data only; NOT a Cable Watch file and not validated for operational use"
+}

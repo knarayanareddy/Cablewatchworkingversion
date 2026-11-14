@@ -6,11 +6,18 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 # 1. Locate or build dataset
-DB="${1:-work/aisdk-2026-01-13_fehmarn.sqlite}"
+DB="${1:-work/aisdk-2026-09-07_bornholm.sqlite}"
 if [ ! -f "$DB" ]; then
-  if [ -f "work/aisdk-2026-01-13_fehmarn.csv.gz" ]; then
-    echo "⚡ First-run initialization: Indexing $DB from compressed source (takes ~9s)..."
-    python3 python/local_ais.py build-db work/aisdk-2026-01-13_fehmarn.csv.gz --output "$DB"
+  CSV_GZ="${DB%.sqlite}.csv.gz"
+  if [ -f "$CSV_GZ" ]; then
+    echo "⚡ First-run initialization: Indexing $DB from $CSV_GZ..."
+    python3 python/local_ais.py build-db "$CSV_GZ" --output "$DB"
+  elif [ -f "work/aisdk-2026-01-13_fehmarn.sqlite" ]; then
+    DB="work/aisdk-2026-01-13_fehmarn.sqlite"
+  elif [ -f "work/aisdk-2026-01-13_fehmarn.csv.gz" ]; then
+    echo "⚡ First-run initialization: Indexing Fehmarn database from compressed source (takes ~9s)..."
+    python3 python/local_ais.py build-db work/aisdk-2026-01-13_fehmarn.csv.gz --output "work/aisdk-2026-01-13_fehmarn.sqlite"
+    DB="work/aisdk-2026-01-13_fehmarn.sqlite"
   else
     # Look for any sqlite database in work/
     DB=$(ls -t work/*.sqlite 2>/dev/null | head -n 1)
