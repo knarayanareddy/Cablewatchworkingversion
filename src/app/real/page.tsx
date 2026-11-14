@@ -81,11 +81,16 @@ type MLScoreResponse = {
   feature_version?: string;
   geometry_hash?: string;
   track_window?: {
-    window_minutes: number;
-    distinct_timestamps: number;
-    first_ts: string;
-    last_ts: string;
-    span_minutes: number;
+    requested_minutes?: number;
+    window_minutes?: number;
+    distinct_fixes?: number;
+    distinct_timestamps?: number;
+    observed_start?: string;
+    observed_end?: string;
+    first_ts?: string;
+    last_ts?: string;
+    observed_span_minutes?: number;
+    span_minutes?: number;
   };
   anomaly_percentile?: number;
   baseline_robust_score?: number;
@@ -2298,7 +2303,7 @@ export default function Real() {
                                 <span>Area/Class: <b className="text-slate-300">{mlScore.area_id} / {mlScore.class_group}</b></span>
                               </div>
                               <div className="flex justify-between">
-                                <span>Track Window: <b className="text-slate-300">{mlScore.track_window?.span_minutes.toFixed(0)}m ({mlScore.track_window?.distinct_timestamps} fixes)</b></span>
+                                <span>Track Window: <b className="text-slate-300">{(mlScore.track_window?.observed_span_minutes ?? mlScore.track_window?.span_minutes ?? 0).toFixed(0)}m ({mlScore.track_window?.distinct_fixes ?? mlScore.track_window?.distinct_timestamps ?? 0} fixes)</b></span>
                                 <span>Ref End: <b className="text-slate-300">{mlScore.training_end}</b></span>
                               </div>
                             </div>
