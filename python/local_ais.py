@@ -128,17 +128,18 @@ class Handler(BaseHTTPRequestHandler):
    try:
     if p.path=='/meta':self.sendjson(200,json.loads(c.execute('SELECT json FROM metadata').fetchone()[0]));return
     if p.path=='/track':
-     q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0];mins=int(q.get('window',['120'])[0]);lim=min(int(q.get('limit',['2000'])[0]),5000)
+     q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0];mins=int(q.get('window',['120'])[0]);lim=max(1,min(int(q.get('limit',['5000'])[0]),20000))
      if not re.fullmatch(r'[0-9]{9}',mmsi):raise ValueError('mmsi must be a 9-digit string')
      if not validtime(t) or not 1<=mins<=1440:raise ValueError('at must be YYYY-MM-DDTHH:MM:SSZ; window must be 1..1440 minutes')
      start=(dt.datetime.strptime(t,'%Y-%m-%dT%H:%M:%SZ')-dt.timedelta(minutes=mins)).strftime('%Y-%m-%dT%H:%M:%SZ')
-     cur=c.execute('SELECT ts,mmsi,lat,lon,sog,cog,hdg,mobile,ship_type,name,nav,sog_q,cog_q,hdg_q,rowid FROM fixes WHERE mmsi=? AND ts>=? AND ts<=? ORDER BY ts ASC,rowid ASC LIMIT ?',(mmsi,start,t,lim+1))
+     cur=c.execute('SELECT ts,mmsi,lat,lon,sog,cog,hdg,mobile,ship_type,name,nav,sog_q,cog_q,hdg_q,rowid FROM fixes WHERE mmsi=? AND ts>=? AND ts<=? ORDER BY ts DESC,rowid DESC LIMIT ?',(mmsi,start,t,lim+1))
      names=['timestamp','mmsi','lat','lon','sog','cog','heading','mobile_type','ship_type','name','navigational_status','sog_quality','cog_quality','heading_quality','rowid']
      track_fixes=[];scanned=0;truncated=False
      for row in cur:
       scanned+=1
       if scanned>lim:truncated=True;break
       track_fixes.append(dict(zip(names,row)))
+     track_fixes.reverse()
      self.sendjson(200,{'mmsi':mmsi,'as_of':t,'window_minutes':mins,'fixes_count':len(track_fixes),'truncated':truncated,'limit':lim,'fixes':track_fixes})
      return
     q=parse_qs(p.query);t=q.get('at',[''])[0];mins=int(q.get('window',['60'])[0])

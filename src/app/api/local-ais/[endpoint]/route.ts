@@ -39,10 +39,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: 
 
   try {
     const body = await req.json();
-    const { zip_path, preset = 'baltic', bbox, max_rows = 1000000, name } = body;
+    const { zip_path, preset = 'baltic', bbox, max_rows = 1000000, name, force = false } = body;
 
     if (!zip_path) {
       return NextResponse.json({ error: 'zip_path is required' }, { status: 400 });
+    }
+
+    if (name && !/^[a-zA-Z0-9_-]{1,64}$/.test(name)) {
+      return NextResponse.json(
+        { error: 'Invalid name. Name must be 1-64 alphanumeric, dash, or underscore characters without paths.' },
+        { status: 400 }
+      );
     }
 
     const scriptPath = path.resolve(process.cwd(), 'python/pipeline.py');
@@ -52,6 +59,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: 
     }
     if (name) {
       args.push('--name', name);
+    }
+    if (force) {
+      args.push('--force');
     }
 
     return await new Promise<NextResponse>((resolve) => {

@@ -1,6 +1,6 @@
 import importlib.util,json,subprocess,sys,tempfile,threading,unittest,urllib.error,urllib.request,zipfile
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]; NORM=ROOT/'python/ais_preprocess.py'; DB=ROOT/'python/local_ais.py'; FIX=ROOT/'fixtures/synthetic-danish-ais.zip'
+ROOT=Path(__file__).resolve().parents[1]; NORM=ROOT/'python/ais_preprocess.py'; DB=ROOT/'python/local_ais.py'; PIPE=ROOT/'python/pipeline.py'; FIX=ROOT/'fixtures/synthetic-danish-ais.zip'
 spec=importlib.util.spec_from_file_location('local_ais',DB);mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 class Pipeline(unittest.TestCase):
  def setUp(self):
@@ -45,4 +45,18 @@ class Pipeline(unittest.TestCase):
   with self.gz.open('ab') as f:f.write(b'not-original')
   r=subprocess.run([sys.executable,str(DB),'build-db',str(self.gz),'--output',str(self.db)],capture_output=True,text=True)
   self.assertNotEqual(r.returncode,0);self.assertIn('SHA-256',r.stderr);self.assertFalse(self.db.exists())
+ def test_pipeline_output_safety_and_name_constraint(self):
+  r=subprocess.run([sys.executable,str(PIPE),str(FIX),'--name','../bad_path'],capture_output=True,text=True)
+  self.assertNotEqual(r.returncode,0)
+  self.assertIn('Invalid output name',r.stderr+r.stdout)
+  name='test_safe_run'
+  r1=subprocess.run([sys.executable,str(PIPE),str(FIX),'--name',name,'--no-switch','--preset','bornholm','--max-rows','100'],capture_output=True,text=True)
+  self.assertEqual(r1.returncode,0,r1.stdout+r1.stderr)
+  r2=subprocess.run([sys.executable,str(PIPE),str(FIX),'--name',name,'--no-switch','--preset','bornholm','--max-rows','100'],capture_output=True,text=True)
+  self.assertNotEqual(r2.returncode,0)
+  self.assertIn('already exists',r2.stderr+r2.stdout)
+  r3=subprocess.run([sys.executable,str(PIPE),str(FIX),'--name',name,'--no-switch','--preset','bornholm','--max-rows','100','--force'],capture_output=True,text=True)
+  self.assertEqual(r3.returncode,0,r3.stdout+r3.stderr)
+  for ext in ('.csv.gz','.sqlite','.csv.gz.report.json'):
+   (ROOT/'work'/f'{name}{ext}').unlink(missing_ok=True)
 if __name__=='__main__':unittest.main()

@@ -51,7 +51,8 @@ def run_pipeline(
     max_output_mb: float = 50.0,
     max_db_mb: float = 150.0,
     switch: bool = True,
-    port: int = 8765
+    port: int = 8765,
+    force: bool = False,
 ):
     src = Path(zip_path).expanduser().resolve()
     if not src.is_file():
@@ -65,8 +66,13 @@ def run_pipeline(
     else:
         selected_bbox = PRESETS["baltic"]
 
-    # Determine output naming
-    if not name:
+    # Determine and strictly validate output naming
+    if name:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", name):
+            raise ValueError(
+                f"Invalid output name '{name}': must be 1-64 alphanumeric, dash, or underscore characters without paths."
+            )
+    else:
         stem = src.stem
         # e.g. aisdk-2026-01-13 -> ais_2026_01_13
         clean_stem = re.sub(r"[^a-zA-Z0-9_-]", "_", stem)
@@ -80,13 +86,16 @@ def run_pipeline(
     out_sqlite = WORK / f"{name}.sqlite"
     report_json = WORK / f"{name}.csv.gz.report.json"
 
-    # Clean existing if needed to allow rerun
-    if out_csv_gz.exists():
-        out_csv_gz.unlink()
-    if report_json.exists():
-        report_json.unlink()
-    if out_sqlite.exists():
-        out_sqlite.unlink()
+    # Enforce safe overwrite prevention
+    existing = [f.name for f in (out_csv_gz, report_json, out_sqlite) if f.exists()]
+    if existing:
+        if not force:
+            raise FileExistsError(
+                f"Output target '{name}' already exists in work/ ({', '.join(existing)}). "
+                f"Choose a new name or pass --force to overwrite."
+            )
+        for f in (out_csv_gz, report_json, out_sqlite):
+            f.unlink(missing_ok=True)
 
     print(f"\n[1/3] Preprocessing {src.name}...")
     print(f"      BBox: {selected_bbox}")
@@ -173,6 +182,7 @@ def main():
     p.add_argument("--max-db-mb", type=float, default=200.0, help="Max SQLite database size in MB (default: 200)")
     p.add_argument("--no-switch", action="store_true", help="Do not attempt to hot-switch the running server")
     p.add_argument("--port", type=int, default=8765, help="Port of running local_ais server (default: 8765)")
+    p.add_argument("--force", action="store_true", help="Explicitly allow overwriting existing output database and files")
 
     args = p.parse_args()
     limit = None if args.max_rows == 0 else args.max_rows
@@ -188,6 +198,7 @@ def main():
             max_db_mb=args.max_db_mb,
             switch=not args.no_switch,
             port=args.port,
+            force=args.force,
         )
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)

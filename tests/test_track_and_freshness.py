@@ -147,5 +147,24 @@ class TrackAndFreshnessTest(unittest.TestCase):
         gap_sec = (t1 - t0).total_seconds()
         self.assertEqual(gap_sec, 600.0)
 
+    def test_track_truncation_preserves_newest_fixes(self):
+        # Request track with limit=3 when 5 fixes exist in the window
+        data = self.get('/track?mmsi=111222333&at=2026-01-13T01%3A30%3A00Z&window=60&limit=3')
+        fixes = data['fixes']
+        
+        # Must be flagged as truncated
+        self.assertTrue(data['truncated'])
+        self.assertEqual(len(fixes), 3)
+        self.assertEqual(data['limit'], 3)
+        
+        # Must contain the NEWEST fix (01:25:00Z), NOT stop at the earliest (01:00:00Z)
+        timestamps = [f['timestamp'] for f in fixes]
+        self.assertIn('2026-01-13T01:25:00Z', timestamps)
+        self.assertNotIn('2026-01-13T01:00:00Z', timestamps)
+        self.assertNotIn('2026-01-13T01:10:00Z', timestamps)
+        
+        # Returned array must still be sorted chronologically ASC
+        self.assertEqual(timestamps, sorted(timestamps))
+
 if __name__ == '__main__':
     unittest.main()

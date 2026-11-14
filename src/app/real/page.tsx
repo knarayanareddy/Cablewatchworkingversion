@@ -450,6 +450,8 @@ export interface ExperimentalTrackResult {
   mmsi: string;
   contributingFixesCount: number;
   timeSpanMin: number;
+  contiguousSlowMin: number;
+  distinctSlowFixesCount: number;
   meanSog: number | null;
   meanDriftAngle: number | null;
   sustainedCorridorFixes: number;
@@ -520,6 +522,7 @@ export default function Real() {
     as_of: string;
     window_minutes: number;
     fixes_count: number;
+    limit?: number;
     truncated: boolean;
     fixes: TrackFix[];
   } | null>(null);
@@ -914,7 +917,7 @@ export default function Real() {
           reasons.push(`speed ${sog.toFixed(1)} kn fits normal trawling profile`);
         }
 
-        // 3. Heading vs Course Deviation (Anchor drag signature)
+        // 3. Heading vs Course Deviation (Course drift signature)
         if (driftAngle !== null && driftAngle > 14) {
           const driftWeight = Math.min((driftAngle - 10) * 0.15, 3.0);
           score += driftWeight;
@@ -938,7 +941,7 @@ export default function Real() {
         // Build human-readable diagnostic sentence
         let reason = '';
         if (tier === 'cue') {
-          reason = `HIGH-PRIORITY CUE: ${reasons.join(', ')}. Strong anchor-drag or disabled drift signature over infrastructure.`;
+          reason = `HIGH-PRIORITY CUE: ${reasons.join(', ')}. Marked behavioral anomaly (slow transit and course/heading divergence over infrastructure corridor); physical verification recommended.`;
         } else if (tier === 'review') {
           reason = `CANDIDATE REVIEW: ${reasons.join(', ')}. Exceeds baseline thresholds; requires verification.`;
         } else {
@@ -1080,19 +1083,60 @@ export default function Real() {
     const tLast = Date.parse(processed[processed.length - 1].timestamp) / 1000;
     const timeSpanMin = Math.max(0, Math.round((tLast - tFirst) / 60));
 
+    // Deduplicate slow-in-corridor observation timestamps to prevent repeats from overstating duration or counts
+    const distinctSlowSecs = Array.from(
+      new Set(slowInsideFixes.map((f) => Math.floor(Date.parse(f.timestamp) / 1000)))
+    ).sort((a, b) => a - b);
+
+    // Calculate maximum contiguous slow corridor dwell episode (allowing intervals <= 15 min / 900s)
+    let maxContiguousSlowSec = 0;
+    let currentEpisodeSec = 0;
+    let currentEpisodeFixCount = distinctSlowSecs.length > 0 ? 1 : 0;
+    let maxEpisodeFixCount = currentEpisodeFixCount;
+
+    for (let i = 1; i < distinctSlowSecs.length; i++) {
+      const deltaSec = distinctSlowSecs[i] - distinctSlowSecs[i - 1];
+      if (deltaSec <= 900) {
+        currentEpisodeSec += deltaSec;
+        currentEpisodeFixCount++;
+      } else {
+        if (currentEpisodeSec > maxContiguousSlowSec) {
+          maxContiguousSlowSec = currentEpisodeSec;
+          maxEpisodeFixCount = currentEpisodeFixCount;
+        }
+        currentEpisodeSec = 0;
+        currentEpisodeFixCount = 1;
+      }
+    }
+    if (currentEpisodeSec > maxContiguousSlowSec) {
+      maxContiguousSlowSec = currentEpisodeSec;
+      maxEpisodeFixCount = currentEpisodeFixCount;
+    }
+    const contiguousSlowMin = Math.round(maxContiguousSlowSec / 60);
+
+    const hasLargeGaps = processed.some((p) => p.gapSec !== null && p.gapSec > 900);
+    const hasDuplicateTimestamps = processed.some(
+      (p, i) => i > 0 && p.timestamp === processed[i - 1].timestamp
+    );
+
     let expScore = 0;
     const expReasons: string[] = [];
 
-    // 1. Sustained Corridor Transit Duration
-    if (slowInsideFixes.length >= 3 && timeSpanMin >= 15) {
-      const dwellWeight = Math.min(3.5, 1.5 + (timeSpanMin / 30) * 1.5);
+    // 1. Sustained Contiguous Corridor Dwell (Evaluated on continuous slow observations, NOT overall track span)
+    if (contiguousSlowMin >= 15 && maxEpisodeFixCount >= 3) {
+      const dwellWeight = Math.min(3.5, 1.5 + (contiguousSlowMin / 30) * 1.5);
       expScore += dwellWeight;
       expReasons.push(
-        `sustained slow transit over infrastructure corridor (${timeSpanMin} min across ${slowInsideFixes.length} observations)`
+        `sustained slow corridor dwell: ~${contiguousSlowMin} min contiguous across ${maxEpisodeFixCount} distinct observations (corridor buffer: ${corridorKm}km)`
+      );
+    } else if (slowInsideFixes.length > 0) {
+      expScore += 0.8;
+      expReasons.push(
+        `intermittent slow corridor presence (~${contiguousSlowMin} contiguous min, ${distinctSlowSecs.length} distinct slow observations; total window: ${timeSpanMin}m)`
       );
     } else if (insideCorridorFixes.length > 0) {
-      expScore += 1.0;
-      expReasons.push(`${insideCorridorFixes.length} observations inside ${corridorKm}km corridor buffer`);
+      expScore += 0.5;
+      expReasons.push(`${insideCorridorFixes.length} observations inside ${corridorKm}km corridor buffer (normal transit speed)`);
     }
 
     // 2. Mean Velocity Deficit across Track
@@ -1113,6 +1157,14 @@ export default function Real() {
       );
     }
 
+    // Add explicit evidence caveats so gaps or duplicates never silently mislead
+    if (hasLargeGaps) {
+      expReasons.push('caveat: track contains observation gaps >15m; dwell represents bounded contiguous segment only');
+    }
+    if (hasDuplicateTimestamps) {
+      expReasons.push('duplicate timestamps deduplicated in dwell calculation');
+    }
+
     let expTier: 'cue' | 'review' | 'normal' = 'normal';
     if (expScore >= 4.2) expTier = 'cue';
     else if (expScore >= 2.2) expTier = 'review';
@@ -1121,6 +1173,8 @@ export default function Real() {
       mmsi: selectedVessel.vessel.mmsi,
       contributingFixesCount: processed.length,
       timeSpanMin,
+      contiguousSlowMin,
+      distinctSlowFixesCount: distinctSlowSecs.length,
       meanSog,
       meanDriftAngle: meanDrift,
       sustainedCorridorFixes: insideCorridorFixes.length,
@@ -2138,12 +2192,27 @@ export default function Real() {
                           )}
                         </div>
 
+                        {trackData?.truncated && (
+                          <div className="rounded bg-amber-950/90 border border-amber-600/70 p-2 text-[10px] text-amber-200 font-sans flex items-start gap-1.5 leading-snug">
+                            <span className="text-amber-400 font-bold">⚠️</span>
+                            <div>
+                              <strong className="text-amber-300">Track Truncated:</strong> Replay query reached safety limit ({trackData.limit || 5000} fixes). Older fixes in this {trackData.window_minutes}m window were omitted to prioritize latest observations up to replay time.
+                            </div>
+                          </div>
+                        )}
+
                         {experimentalTrackScore && (
                           <div className="text-[11px] space-y-1.5 font-mono">
                             <div className="flex justify-between text-slate-400">
-                              <span>Track Evidence:</span>
+                              <span>Track Observations:</span>
                               <span className="text-slate-200">
                                 {experimentalTrackScore.contributingFixesCount} fixes over {experimentalTrackScore.timeSpanMin} min
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-slate-400">
+                              <span>Contiguous Slow Dwell:</span>
+                              <span className={experimentalTrackScore.contiguousSlowMin >= 15 ? 'text-rose-400 font-bold' : 'text-slate-300 font-bold'}>
+                                ~{experimentalTrackScore.contiguousSlowMin} min ({experimentalTrackScore.distinctSlowFixesCount} distinct obs)
                               </span>
                             </div>
                             <div className="flex justify-between text-slate-400">
@@ -2185,6 +2254,11 @@ export default function Real() {
                             <span className="font-bold text-slate-300">Evidence Observations (ts ≤ at)</span>
                             <span>{trackData.fixes_count} fixes</span>
                           </div>
+                          {trackData.truncated && (
+                            <div className="rounded bg-amber-950/70 border border-amber-600/50 p-1.5 text-[9px] text-amber-200 font-sans leading-tight">
+                              ⚠️ Oldest observations in {trackData.window_minutes}m window omitted (safety cap {trackData.limit || 5000} fixes). Latest observations preserved up to replay time.
+                            </div>
+                          )}
                           <div className="max-h-52 overflow-y-auto text-[10px] divide-y divide-slate-800/60 pr-1">
                             {experimentalTrackScore?.contributingFixes.map((f, i) => (
                               <div
