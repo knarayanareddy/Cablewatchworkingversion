@@ -18,8 +18,19 @@ __pycache__/
 # Large Raw Data Files & Archives
 *.zip
 *.tar.gz
-work/*fehmarn*.sqlite
-work/*bornholm*.sqlite
+work/*.sqlite
+!work/sample.sqlite
+!work/baltic_sample.sqlite
+!work/aisdk-2026-01-13_storebaelt_100k.sqlite
+work/*.csv.gz
+!work/sample.csv.gz
+!work/baltic_sample.csv.gz
+!work/aisdk-2026-01-13_storebaelt_100k.csv.gz
+!work/aisdk-2026-01-13_fehmarn.csv.gz
+!work/aisdk-2026-09-07_bornholm.csv.gz
+work/.staging*
+work/.tmp*
+work/.lock*
 
 # OS & Logs
 .DS_Store

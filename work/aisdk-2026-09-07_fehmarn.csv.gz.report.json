@@ -1,0 +1,41 @@
+{
+  "tool_version": "0.1.0",
+  "input_file": "aisdk-2026-09-07.zip",
+  "zip_member": "aisdk-2026-09-07.csv",
+  "zip_member_uncompressed_bytes": 3954645597,
+  "input_zip_bytes": 745903821,
+  "input_sha256": null,
+  "timestamp_interpretation": "Source timestamps interpreted as UTC by explicit user assumption; verify with provider. This is NOT proof of live availability.",
+  "timestamp_source_format": "DD/MM/YYYY HH:MM:SS",
+  "bbox_west_south_east_north": [
+    11.0,
+    54.4,
+    11.6,
+    54.7
+  ],
+  "mobile_filter": "Class A and Class B when mobile column exists; otherwise no mobile-type filter",
+  "counts": {
+    "rows_read": 21998775,
+    "rows_written": 1006147,
+    "stopped_at_row_limit": 0
+  },
+  "optional_field_quality_counts": {
+    "sog_valid": 1005981,
+    "cog_valid": 994936,
+    "heading_valid": 899100,
+    "heading_missing": 107047,
+    "cog_missing": 11211,
+    "sog_missing": 165,
+    "sog_saturated_lower_bound": 1
+  },
+  "min_source_timestamp_utc": "2026-09-07T00:00:00Z",
+  "max_source_timestamp_utc": "2026-09-07T23:59:58Z",
+  "output_compressed_bytes": 7404537,
+  "size_cap_bytes": 100000000,
+  "truncated_by_row_limit": false,
+  "deduplicated": false,
+  "sorted": false,
+  "availability_time": "not supplied; no live-arrival time inferred",
+  "status": "normalized data only; NOT a Cable Watch file and not validated for operational use",
+  "output_sha256": "da6b83535239f5b9ef764d726c9f28fb202313b28ece1eb35db30f51786340e4"
+}
