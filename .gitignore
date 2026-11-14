@@ -19,6 +19,7 @@ __pycache__/
 *.zip
 *.tar.gz
 work/*fehmarn*.sqlite
+work/*bornholm*.sqlite
 
 # OS & Logs
 .DS_Store
