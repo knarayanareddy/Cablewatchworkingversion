@@ -201,6 +201,14 @@ export function useRadar() {
     }
   };
 
+  const cancelIngest = async () => {
+    try {
+      await localAis('abort-ingest', { method: 'POST' });
+    } catch {}
+    setIsIngesting(false);
+    setIngestStatus('');
+  };
+
   const inFlightRef = useRef(false);
 
   // Fetch Snapshot at timestamp with backpressure protection
@@ -541,7 +549,7 @@ export function useRadar() {
     analyzedVessels, selectedVessel, experimentalTrackScore, alertCounts,
     minSec, maxSec, curSec,
     // actions
-    refreshMeta, handleSwitchDataset, handleRunIngest, loadGeoJson,
+    refreshMeta, handleSwitchDataset, handleRunIngest, cancelIngest, loadGeoJson,
     resetView, focusSector, selectCorridor, resetDefaultRoute,
     PRESET_BASES, SECTOR_CONFIG,
   };

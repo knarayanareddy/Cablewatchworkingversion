@@ -106,8 +106,11 @@ export function PlaybackBar({ r }: { r: Radar }) {
             >
               <option value={15}>15 min</option>
               <option value={30}>30 min</option>
-              <option value={60}>60 min</option>
+              <option value={60}>60 min (1h)</option>
               <option value={180}>3 hours</option>
+              <option value={360}>6 hours</option>
+              <option value={720}>12 hours</option>
+              <option value={1440}>24 hours (Full Day)</option>
             </select>
           </label>
         </div>

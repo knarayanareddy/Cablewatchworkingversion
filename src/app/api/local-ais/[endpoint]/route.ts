@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_GET = ['meta', 'snapshot', 'track', 'ml-score', 'datasets', 'switch', 'find-zips'];
+let activeIngestProc: ChildProcess | null = null;
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) {
   const { endpoint } = await ctx.params;
@@ -33,6 +34,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ endpoint: s
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) {
   const { endpoint } = await ctx.params;
+
+  if (endpoint === 'abort-ingest') {
+    if (activeIngestProc) {
+      try {
+        activeIngestProc.kill('SIGKILL');
+      } catch {}
+      activeIngestProc = null;
+    }
+    try {
+      spawn('pkill', ['-9', '-f', 'ais_preprocess.py|pipeline.py']);
+    } catch {}
+    return NextResponse.json({ ok: true, message: 'Ingestion aborted' });
+  }
+
   if (endpoint !== 'ingest') {
     return NextResponse.json({ error: 'Endpoint not allowed' }, { status: 404 });
   }
@@ -68,6 +83,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: 
 
     return await new Promise<NextResponse>((resolve) => {
       const proc = spawn('python3', args);
+      activeIngestProc = proc;
       let stdout = '';
       let stderr = '';
 
@@ -79,6 +95,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: 
       });
 
       proc.on('close', (code) => {
+        activeIngestProc = null;
         if (code === 0) {
           resolve(
             NextResponse.json({

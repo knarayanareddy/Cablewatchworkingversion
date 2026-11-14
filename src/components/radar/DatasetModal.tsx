@@ -115,8 +115,15 @@ export function DatasetModal({ r }: { r: Radar }) {
             {r.ingestStatus && <div className="blink mt-3 rounded-lg border border-sky/40 bg-sky/10 px-3 py-2 text-xs text-sky">{r.ingestStatus}</div>}
 
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={close} disabled={r.isIngesting} className="rounded-lg border border-ink-600 px-4 py-2 text-xs font-bold text-soft transition-colors hover:bg-ink-700 hover:text-white disabled:opacity-50">
-                Cancel
+              <button
+                type="button"
+                onClick={() => {
+                  r.cancelIngest();
+                  close();
+                }}
+                className="rounded-lg border border-ink-600 px-4 py-2 text-xs font-bold text-soft transition-colors hover:bg-ink-700 hover:text-white"
+              >
+                {r.isIngesting ? 'Cancel Ingestion' : 'Cancel'}
               </button>
               <button
                 onClick={r.handleRunIngest}
