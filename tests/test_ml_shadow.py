@@ -165,7 +165,7 @@ class MLShadowDatabaseAndGatesTest(unittest.TestCase):
 class MLShadowHTTPIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.tmp.name) / 'http_shadow.sqlite'
+        self.db_path = Path(self.tmp.name) / 'bornholm_shadow.sqlite'
         conn = sqlite3.connect(str(self.db_path))
         conn.execute(
             'CREATE TABLE fixes(ts TEXT NOT NULL, mmsi TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, '
@@ -175,13 +175,13 @@ class MLShadowHTTPIntegrationTest(unittest.TestCase):
         conn.execute('CREATE INDEX fixes_vessel ON fixes(mmsi, ts)')
         conn.execute('CREATE TABLE metadata(json TEXT NOT NULL)')
         meta = {
-            'records': 10,
+            'records': 20,
             'min_timestamp_utc': '2026-09-07T00:00:00Z',
             'max_timestamp_utc': '2026-09-07T02:00:00Z',
             'preprocessor_report': {'truncated_by_row_limit': False}
         }
         conn.execute('INSERT INTO metadata(json) VALUES(?)', (json.dumps(meta),))
-        # Insert 4 valid fixes for vessel 219111222
+        # Insert 4 valid fixes for Cargo vessel 219111222
         for ts, lat, lon, sog in [
             ('2026-09-07T01:00:00Z', 55.00, 14.00, 11.0),
             ('2026-09-07T01:10:00Z', 55.02, 14.03, 11.2),
@@ -191,7 +191,19 @@ class MLShadowHTTPIntegrationTest(unittest.TestCase):
             conn.execute(
                 'INSERT INTO fixes(ts, mmsi, lat, lon, sog, cog, hdg, mobile, ship_type, name, nav, sog_q, cog_q, hdg_q) '
                 'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (ts, '219111222', lat, lon, sog, 90.0, 90.0, 'Class A', 'Cargo', 'VESSEL A', 'Under way', 'valid', 'valid', 'valid')
+                (ts, '219111222', lat, lon, sog, 90.0, 90.0, 'Class A', 'Cargo', 'VESSEL CARGO', 'Under way', 'valid', 'valid', 'valid')
+            )
+        # Insert 4 valid fixes for Tanker vessel 219333444
+        for ts, lat, lon, sog in [
+            ('2026-09-07T01:00:00Z', 55.00, 14.00, 11.0),
+            ('2026-09-07T01:10:00Z', 55.02, 14.03, 11.2),
+            ('2026-09-07T01:20:00Z', 55.04, 14.06, 11.5),
+            ('2026-09-07T01:30:00Z', 55.06, 14.09, 11.8),
+        ]:
+            conn.execute(
+                'INSERT INTO fixes(ts, mmsi, lat, lon, sog, cog, hdg, mobile, ship_type, name, nav, sog_q, cog_q, hdg_q) '
+                'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (ts, '219333444', lat, lon, sog, 90.0, 90.0, 'Class A', 'Tanker', 'VESSEL TANKER', 'Under way', 'valid', 'valid', 'valid')
             )
         conn.commit()
         conn.close()
@@ -234,6 +246,93 @@ class MLShadowHTTPIntegrationTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(f'http://127.0.0.1:{self.port}/ml-score?mmsi=ABC&at=2026-09-07T01:30:00Z')
         self.assertEqual(ctx.exception.code, 400)
+
+    def test_context_matching_refuses_unregistered_class(self):
+        # Vessel 219333444 is Tanker, but model registry only has bornholm:cargo
+        url = f'http://127.0.0.1:{self.port}/ml-score?mmsi=219333444&at=2026-09-07T01:30:00Z'
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertEqual(data.get('status'), 'insufficient_baseline')
+            self.assertIn("No baseline model trained for area 'bornholm' and vessel class 'tanker'", data.get('reason', ''))
+
+    def test_context_matching_refuses_truncated_dataset(self):
+        # Create database with truncated_by_row_limit = True
+        trunc_db = Path(self.tmp.name) / 'bornholm_truncated.sqlite'
+        conn = sqlite3.connect(str(trunc_db))
+        conn.execute(
+            'CREATE TABLE fixes(ts TEXT NOT NULL, mmsi TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, '
+            'sog REAL, cog REAL, hdg REAL, mobile TEXT, ship_type TEXT, name TEXT, nav TEXT, '
+            'sog_q TEXT, cog_q TEXT, hdg_q TEXT)'
+        )
+        conn.execute('CREATE INDEX fixes_vessel ON fixes(mmsi, ts)')
+        conn.execute('CREATE TABLE metadata(json TEXT NOT NULL)')
+        meta = {
+            'records': 100,
+            'min_timestamp_utc': '2026-09-07T00:00:00Z',
+            'max_timestamp_utc': '2026-09-07T02:00:00Z',
+            'preprocessor_report': {'truncated_by_row_limit': True, 'input_file': 'sample.zip'}
+        }
+        conn.execute('INSERT INTO metadata(json) VALUES(?)', (json.dumps(meta),))
+        conn.commit()
+        conn.close()
+
+        server = local_ais.Server(('127.0.0.1', 0), str(trunc_db))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f'http://127.0.0.1:{server.server_port}/ml-score?mmsi=219111222&at=2026-09-07T01:30:00Z'
+            with urllib.request.urlopen(url) as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode('utf-8'))
+                self.assertEqual(data.get('status'), 'truncated_coverage')
+                self.assertIn('truncated at ingestion', data.get('reason', ''))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_training_validation_gates(self):
+        import subprocess
+        # Create minimal test features file with only 5 records on same day
+        sample_feats = {
+            'features': [
+                {'as_of': '2026-09-07T01:00:00Z', 'features': {'median_sog_kn': 10.0, 'sog_iqr_kn': 1.0, 'slow_time_fraction': 0.0, 'median_corridor_distance_km': 5.0}},
+                {'as_of': '2026-09-07T01:10:00Z', 'features': {'median_sog_kn': 10.5, 'sog_iqr_kn': 1.1, 'slow_time_fraction': 0.0, 'median_corridor_distance_km': 5.2}},
+                {'as_of': '2026-09-07T01:20:00Z', 'features': {'median_sog_kn': 11.0, 'sog_iqr_kn': 1.2, 'slow_time_fraction': 0.0, 'median_corridor_distance_km': 5.4}},
+                {'as_of': '2026-09-07T01:30:00Z', 'features': {'median_sog_kn': 11.5, 'sog_iqr_kn': 1.3, 'slow_time_fraction': 0.0, 'median_corridor_distance_km': 5.6}},
+                {'as_of': '2026-09-07T01:40:00Z', 'features': {'median_sog_kn': 12.0, 'sog_iqr_kn': 1.4, 'slow_time_fraction': 0.0, 'median_corridor_distance_km': 5.8}},
+            ]
+        }
+        feat_file = Path(self.tmp.name) / 'sample_feats.json'
+        with open(feat_file, 'w') as f:
+            json.dump(sample_feats, f)
+
+        cfg_file = Path(self.tmp.name) / 'config.json'
+        with open(cfg_file, 'w') as f:
+            json.dump({'model_id': 'test_model', 'area_id': 'bornholm', 'class_group': 'cargo'}, f)
+
+        out_dir = Path(self.tmp.name) / 'model_out'
+
+        # Attempt training without --synthetic-demo -> must fail due to <200 samples and <3 days
+        cmd_fail = [
+            sys.executable,
+            str(ROOT / 'python/ml/train.py'),
+            '--config', str(cfg_file),
+            '--features', str(feat_file),
+            '--output', str(out_dir)
+        ]
+        res_fail = subprocess.run(cmd_fail, capture_output=True, text=True)
+        self.assertNotEqual(res_fail.returncode, 0)
+        self.assertIn('Training validation failed', res_fail.stderr)
+
+        # Attempt training with --synthetic-demo -> succeeds and marks is_synthetic_demo: True
+        cmd_demo = cmd_fail + ['--synthetic-demo']
+        res_demo = subprocess.run(cmd_demo, capture_output=True, text=True)
+        self.assertEqual(res_demo.returncode, 0)
+        with open(out_dir / 'manifest.json') as mf:
+            mdata = json.load(mf)
+            self.assertTrue(mdata.get('is_synthetic_demo'))
+            self.assertIn('heldout_evaluation', mdata)
 
 
 if __name__ == '__main__':

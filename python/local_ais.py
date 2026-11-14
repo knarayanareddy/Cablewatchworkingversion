@@ -131,6 +131,13 @@ class Handler(BaseHTTPRequestHandler):
      q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0]
      if not re.fullmatch(r'[0-9]{9}',mmsi):self.sendjson(400,{'status':'invalid_request','error':'mmsi must be a 9-digit string'});return
      if not validtime(t):self.sendjson(400,{'status':'invalid_request','error':'at must be YYYY-MM-DDTHH:MM:SSZ'});return
+     try:
+      raw_meta=c.execute('SELECT json FROM metadata').fetchone()
+      meta_obj=json.loads(raw_meta[0]) if raw_meta else {}
+     except Exception:meta_obj={}
+     prep=meta_obj.get('preprocessor_report',{})
+     if prep.get('truncated_by_row_limit',False):
+      self.sendjson(200,{'status':'truncated_coverage','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':'Dataset coverage was truncated at ingestion; baseline comparison refused.','details':{'truncated_by_row_limit':True,'input_file':prep.get('input_file','')}});return
      corridor=[[[13.82,54.82],[13.95,54.94],[14.05,55.04],[14.18,55.15],[14.32,55.28]]]
      try:
       import sys
@@ -141,12 +148,28 @@ class Handler(BaseHTTPRequestHandler):
       from python.ml.model import MLModelManifest
      except ImportError as ie:
       self.sendjson(200,{'status':'model_unavailable','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f'ML dependencies unavailable: {ie}'});return
-     manifest_file=root/'models/v1/bornholm_cargo_synthetic.json'
-     if not manifest_file.is_file():
-      self.sendjson(200,{'status':'insufficient_baseline','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':'No baseline model manifest trained for this area/class.'});return
+     db_name=P(self.server.db).name.lower()
+     area_id='bornholm' if 'bornholm' in db_name else 'storebaelt' if 'storebaelt' in db_name else 'unknown'
      try:
       feats=extract_track_features(self.server.db,mmsi=mmsi,as_of=t,lines=corridor,corridor_id='bornholm_power',lookback_minutes=60)
+      vessel_class=feats['class_group']
+      reg_file=root/'models/v1/model_registry.json'
+      reg_data={}
+      if reg_file.is_file():
+       with reg_file.open('r',encoding='utf-8') as rf:reg_data=json.load(rf).get('trusted_models',{})
+      rel_manifest=reg_data.get(f'{area_id}:{vessel_class}')
+      if not rel_manifest:
+       self.sendjson(200,{'status':'insufficient_baseline','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f"No baseline model trained for area '{area_id}' and vessel class '{vessel_class}'.",'details':{'area_id':area_id,'class_group':vessel_class}});return
+      manifest_file=root/rel_manifest
+      if not manifest_file.is_file():
+       self.sendjson(200,{'status':'insufficient_baseline','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f'Model manifest file missing: {rel_manifest}','details':{'manifest':rel_manifest}});return
       model=MLModelManifest.load(manifest_file)
+      if model.class_group!=vessel_class:
+       self.sendjson(200,{'status':'insufficient_baseline','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f"Model class '{model.class_group}' does not match vessel class '{vessel_class}'.",'details':{'model_class':model.class_group,'vessel_class':vessel_class}});return
+      if model.area_id!=area_id:
+       self.sendjson(200,{'status':'area_mismatch','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f"Model area '{model.area_id}' does not match dataset area '{area_id}'.",'details':{'model_area':model.area_id,'dataset_area':area_id}});return
+      if model.geometry_hash and model.geometry_hash!=feats['geometry_hash']:
+       self.sendjson(200,{'status':'geometry_mismatch','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':'Corridor geometry hash does not match model baseline training geometry.','details':{'model_hash':model.geometry_hash,'corridor_hash':feats['geometry_hash']}});return
       ev=model.evaluate(feats['features'])
       self.sendjson(200,{
        'status':'ok',
