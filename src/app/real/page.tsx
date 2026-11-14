@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { evaluateTrackScore, type ExperimentalTrackResult, type TrackFix } from '@/lib/cablewatch/track_score';
 
 type Fix = {
   timestamp: string;
@@ -442,35 +443,7 @@ export function smallestCircularDiff(a: number, b: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
-export interface TrackFix extends Fix {
-  rowid?: number;
-}
-
-export interface ExperimentalTrackResult {
-  mmsi: string;
-  contributingFixesCount: number;
-  timeSpanMin: number;
-  contiguousSlowMin: number;
-  distinctSlowFixesCount: number;
-  meanSog: number | null;
-  meanDriftAngle: number | null;
-  sustainedCorridorFixes: number;
-  score: number;
-  tier: 'cue' | 'review' | 'normal';
-  reason: string;
-  contributingFixes: {
-    timestamp: string;
-    lat: number;
-    lon: number;
-    sog: number | null;
-    cog: number | null;
-    heading: number | null;
-    drift: number | null;
-    distKm: number | null;
-    isConflicting: boolean;
-    gapSec: number | null;
-  }[];
-}
+export type { TrackFix, ExperimentalTrackResult };
 
 // Anomaly Assessment Record
 export interface AnomalyResult {
@@ -872,14 +845,15 @@ export default function Real() {
         const isFerry = typeLower.includes('pass') || typeLower.includes('ferry');
         const isCommercial = typeLower.includes('cargo') || typeLower.includes('tanker');
 
-        // Speed Deficit Calculation
-        const sog = v.sog ?? 0;
+        // Speed Deficit Calculation (preserve null as missing telemetry, do not treat as 0.0 kn)
+        const sog = v.sog;
         let speedDeficit = 0;
-        if (isFishing) {
-          // Fishing towing at 2.5 - 4.5 kn is innocent and expected!
-          speedDeficit = 0;
-        } else if (sog < baseline) {
-          speedDeficit = baseline - sog;
+        if (sog !== null) {
+          if (isFishing) {
+            speedDeficit = 0;
+          } else if (sog < baseline) {
+            speedDeficit = baseline - sog;
+          }
         }
 
         // Heading vs Course Drift Angle (Smallest circular arc)
@@ -905,14 +879,14 @@ export default function Real() {
           reasons.push(`${d.toFixed(1)} km from cable corridor`);
         }
 
-        // 2. Slow Speed Deficit
-        if (sog > 0.5 && sog < 6.0 && !isFishing) {
-          // Slow moving commercial vessel is prime dragging suspect
+        // 2. Speed Evaluation
+        if (sog === null) {
+          reasons.push('speed field missing/unreported');
+        } else if (sog > 0.5 && sog < 6.0 && !isFishing) {
           const deficitWeight = Math.min(speedDeficit * 0.45, 3.5);
           score += deficitWeight;
           reasons.push(`slow transit ${sog.toFixed(1)} kn vs ~${baseline.toFixed(1)} kn typical (${v.ship_type || 'Commercial'})`);
         } else if (isFishing && sog > 0.5 && sog < 4.5) {
-          // Innocent fishing activity discount
           score = Math.max(0, score - 2.0);
           reasons.push(`speed ${sog.toFixed(1)} kn fits normal trawling profile`);
         }
@@ -925,9 +899,9 @@ export default function Real() {
         }
 
         // 4. Stationarity / Drifting
-        if (sog >= 0.1 && sog <= 1.5 && d !== null && d <= corridorKm) {
+        if (sog !== null && sog >= 0.1 && sog <= 1.5 && d !== null && d <= corridorKm) {
           score += 2.0;
-          reasons.push('near-stationary inside cable corridor');
+          reasons.push(`near-stationary at ${sog.toFixed(1)} kn inside cable corridor`);
         }
 
         // Determine Tier
@@ -938,14 +912,14 @@ export default function Real() {
           tier = 'review'; // Review candidate
         }
 
-        // Build human-readable diagnostic sentence
+        // Build human-readable diagnostic sentence solely from actual observed factors
         let reason = '';
         if (tier === 'cue') {
-          reason = `HIGH-PRIORITY CUE: ${reasons.join(', ')}. Marked behavioral anomaly (slow transit and course/heading divergence over infrastructure corridor); physical verification recommended.`;
+          reason = `HIGH-PRIORITY CUE. Observed factors: ${reasons.join('; ')}. Physical verification recommended.`;
         } else if (tier === 'review') {
-          reason = `CANDIDATE REVIEW: ${reasons.join(', ')}. Exceeds baseline thresholds; requires verification.`;
+          reason = `CANDIDATE REVIEW. Observed factors: ${reasons.join('; ')}. Baseline exceedance; verification recommended.`;
         } else {
-          reason = `Normal traffic: ${v.ship_type || 'vessel'} operating within standard navigational baselines.`;
+          reason = `Normal traffic: ${v.ship_type || 'vessel'} operating within standard navigational baselines (${reasons.length ? reasons.join('; ') : 'standard transit'}).`;
         }
 
         return {
@@ -1034,159 +1008,17 @@ export default function Real() {
     [analyzedVessels, selectedMmsi]
   );
 
-  // Experimental Multi-Fix Track-Based Score Formulation
+  // Experimental Multi-Fix Track-Based Score Formulation (Delegates to modular continuity engine)
   const experimentalTrackScore: ExperimentalTrackResult | null = useMemo(() => {
     if (!selectedVessel || !trackData || !trackData.fixes || trackData.fixes.length === 0) return null;
-    const fixes = trackData.fixes;
-    const typeLower = (selectedVessel.vessel.ship_type || 'undefined').toLowerCase();
-    const isFishing = typeLower.includes('fish') || typeLower.includes('trawl');
-
-    const processed = fixes.map((f, idx) => {
-      const curTs = Date.parse(f.timestamp) / 1000;
-      const dist = lines.length && local ? nearKm(f, lines) : null;
-      let drift: number | null = null;
-      if (f.heading !== null && f.cog !== null) {
-        drift = smallestCircularDiff(f.heading, f.cog);
-      }
-      const isConflicting =
-        idx > 0 &&
-        fixes[idx - 1].timestamp === f.timestamp &&
-        (fixes[idx - 1].lat !== f.lat || fixes[idx - 1].lon !== f.lon);
-      const gapSec = idx > 0 ? curTs - Date.parse(fixes[idx - 1].timestamp) / 1000 : null;
-
-      return {
-        timestamp: f.timestamp,
-        lat: f.lat,
-        lon: f.lon,
-        sog: f.sog,
-        cog: f.cog,
-        heading: f.heading,
-        drift,
-        distKm: dist,
-        isConflicting,
-        gapSec,
-      };
-    });
-
-    const validSogs = processed.map((p) => p.sog).filter((s): s is number => s !== null);
-    const meanSog = validSogs.length ? validSogs.reduce((a, b) => a + b, 0) / validSogs.length : null;
-
-    const validDrifts = processed.map((p) => p.drift).filter((d): d is number => d !== null);
-    const meanDrift = validDrifts.length ? validDrifts.reduce((a, b) => a + b, 0) / validDrifts.length : null;
-
-    const insideCorridorFixes = processed.filter((p) => p.distKm !== null && p.distKm <= corridorKm);
-    const slowInsideFixes = insideCorridorFixes.filter(
-      (p) => p.sog !== null && p.sog > 0.5 && p.sog < 6.0 && !isFishing
+    return evaluateTrackScore(
+      trackData.fixes,
+      lines,
+      corridorKm,
+      selectedVessel.vessel.ship_type,
+      selectedVessel.vessel.mmsi
     );
-
-    const tFirst = Date.parse(processed[0].timestamp) / 1000;
-    const tLast = Date.parse(processed[processed.length - 1].timestamp) / 1000;
-    const timeSpanMin = Math.max(0, Math.round((tLast - tFirst) / 60));
-
-    // Deduplicate slow-in-corridor observation timestamps to prevent repeats from overstating duration or counts
-    const distinctSlowSecs = Array.from(
-      new Set(slowInsideFixes.map((f) => Math.floor(Date.parse(f.timestamp) / 1000)))
-    ).sort((a, b) => a - b);
-
-    // Calculate maximum contiguous slow corridor dwell episode (allowing intervals <= 15 min / 900s)
-    let maxContiguousSlowSec = 0;
-    let currentEpisodeSec = 0;
-    let currentEpisodeFixCount = distinctSlowSecs.length > 0 ? 1 : 0;
-    let maxEpisodeFixCount = currentEpisodeFixCount;
-
-    for (let i = 1; i < distinctSlowSecs.length; i++) {
-      const deltaSec = distinctSlowSecs[i] - distinctSlowSecs[i - 1];
-      if (deltaSec <= 900) {
-        currentEpisodeSec += deltaSec;
-        currentEpisodeFixCount++;
-      } else {
-        if (currentEpisodeSec > maxContiguousSlowSec) {
-          maxContiguousSlowSec = currentEpisodeSec;
-          maxEpisodeFixCount = currentEpisodeFixCount;
-        }
-        currentEpisodeSec = 0;
-        currentEpisodeFixCount = 1;
-      }
-    }
-    if (currentEpisodeSec > maxContiguousSlowSec) {
-      maxContiguousSlowSec = currentEpisodeSec;
-      maxEpisodeFixCount = currentEpisodeFixCount;
-    }
-    const contiguousSlowMin = Math.round(maxContiguousSlowSec / 60);
-
-    const hasLargeGaps = processed.some((p) => p.gapSec !== null && p.gapSec > 900);
-    const hasDuplicateTimestamps = processed.some(
-      (p, i) => i > 0 && p.timestamp === processed[i - 1].timestamp
-    );
-
-    let expScore = 0;
-    const expReasons: string[] = [];
-
-    // 1. Sustained Contiguous Corridor Dwell (Evaluated on continuous slow observations, NOT overall track span)
-    if (contiguousSlowMin >= 15 && maxEpisodeFixCount >= 3) {
-      const dwellWeight = Math.min(3.5, 1.5 + (contiguousSlowMin / 30) * 1.5);
-      expScore += dwellWeight;
-      expReasons.push(
-        `sustained slow corridor dwell: ~${contiguousSlowMin} min contiguous across ${maxEpisodeFixCount} distinct observations (corridor buffer: ${corridorKm}km)`
-      );
-    } else if (slowInsideFixes.length > 0) {
-      expScore += 0.8;
-      expReasons.push(
-        `intermittent slow corridor presence (~${contiguousSlowMin} contiguous min, ${distinctSlowSecs.length} distinct slow observations; total window: ${timeSpanMin}m)`
-      );
-    } else if (insideCorridorFixes.length > 0) {
-      expScore += 0.5;
-      expReasons.push(`${insideCorridorFixes.length} observations inside ${corridorKm}km corridor buffer (normal transit speed)`);
-    }
-
-    // 2. Mean Velocity Deficit across Track
-    if (meanSog !== null && meanSog > 0.5 && meanSog < 6.0 && !isFishing) {
-      expScore += 2.0;
-      expReasons.push(`mean track speed ${meanSog.toFixed(1)} kn indicates sustained low velocity`);
-    } else if (isFishing && meanSog !== null && meanSog < 4.5) {
-      expScore = Math.max(0, expScore - 2.0);
-      expReasons.push('mean speed consistent with standard trawling profile');
-    }
-
-    // 3. Persistent Course / Heading Divergence
-    if (meanDrift !== null && meanDrift > 14 && validDrifts.length >= 3) {
-      const driftWeight = Math.min(3.0, (meanDrift - 10) * 0.15);
-      expScore += driftWeight;
-      expReasons.push(
-        `persistent course/heading divergence: avg Δ = ${meanDrift.toFixed(0)}° across ${validDrifts.length} observations`
-      );
-    }
-
-    // Add explicit evidence caveats so gaps or duplicates never silently mislead
-    if (hasLargeGaps) {
-      expReasons.push('caveat: track contains observation gaps >15m; dwell represents bounded contiguous segment only');
-    }
-    if (hasDuplicateTimestamps) {
-      expReasons.push('duplicate timestamps deduplicated in dwell calculation');
-    }
-
-    let expTier: 'cue' | 'review' | 'normal' = 'normal';
-    if (expScore >= 4.2) expTier = 'cue';
-    else if (expScore >= 2.2) expTier = 'review';
-
-    return {
-      mmsi: selectedVessel.vessel.mmsi,
-      contributingFixesCount: processed.length,
-      timeSpanMin,
-      contiguousSlowMin,
-      distinctSlowFixesCount: distinctSlowSecs.length,
-      meanSog,
-      meanDriftAngle: meanDrift,
-      sustainedCorridorFixes: insideCorridorFixes.length,
-      score: expScore,
-      tier: expTier,
-      reason:
-        expReasons.length > 0
-          ? `EXPERIMENTAL TRACK EVALUATION: ${expReasons.join('; ')}.`
-          : 'Normal multi-fix transit behavior; no sustained corridor dwell or persistent drift anomaly.',
-      contributingFixes: processed,
-    };
-  }, [selectedVessel, trackData, lines, corridorKm, local]);
+  }, [selectedVessel, trackData, lines, corridorKm]);
 
   const minSec = meta ? Date.parse(meta.min_timestamp_utc) / 1000 : 0;
   const maxSec = meta ? Date.parse(meta.max_timestamp_utc) / 1000 : 0;

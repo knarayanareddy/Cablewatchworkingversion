@@ -53,9 +53,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ endpoint: 
     }
 
     const scriptPath = path.resolve(process.cwd(), 'python/pipeline.py');
-    const args = [scriptPath, zip_path, '--preset', preset, '--max-rows', String(max_rows)];
+    const args = [scriptPath, zip_path, '--max-rows', String(max_rows)];
     if (bbox && Array.isArray(bbox) && bbox.length === 4) {
       args.push('--bbox', ...bbox.map(String));
+    } else if (preset) {
+      args.push('--preset', preset);
     }
     if (name) {
       args.push('--name', name);

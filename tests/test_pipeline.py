@@ -59,4 +59,35 @@ class Pipeline(unittest.TestCase):
   self.assertEqual(r3.returncode,0,r3.stdout+r3.stderr)
   for ext in ('.csv.gz','.sqlite','.csv.gz.report.json'):
    (ROOT/'work'/f'{name}{ext}').unlink(missing_ok=True)
+ def test_force_overwrite_preserves_sentinels_on_failure(self):
+  name='sentinel_test'
+  work=ROOT/'work'
+  work.mkdir(parents=True,exist_ok=True)
+  f_csv=work/f'{name}.csv.gz'; f_sql=work/f'{name}.sqlite'; f_rep=work/f'{name}.csv.gz.report.json'
+  try:
+   f_csv.write_bytes(b'sentinel_csv'); f_sql.write_bytes(b'sentinel_sql'); f_rep.write_bytes(b'{"sentinel":true}')
+   bad_zip=self.d/'corrupt.zip'; bad_zip.write_bytes(b'not a real zip file')
+   r=subprocess.run([sys.executable,str(PIPE),str(bad_zip),'--name',name,'--force'],capture_output=True,text=True)
+   self.assertNotEqual(r.returncode,0)
+   self.assertTrue(f_csv.exists(),'Original csv.gz must be preserved on failure')
+   self.assertTrue(f_sql.exists(),'Original sqlite must be preserved on failure')
+   self.assertTrue(f_rep.exists(),'Original report must be preserved on failure')
+   self.assertEqual(f_csv.read_bytes(),b'sentinel_csv')
+   self.assertEqual(f_sql.read_bytes(),b'sentinel_sql')
+  finally:
+   f_csv.unlink(missing_ok=True); f_sql.unlink(missing_ok=True); f_rep.unlink(missing_ok=True)
+ def test_explicit_bbox_precedence_over_preset(self):
+  name='bbox_precedence_test'
+  work=ROOT/'work'
+  f_rep=work/f'{name}.csv.gz.report.json'
+  try:
+   # Pass BOTH preset (baltic) AND explicit bbox (custom coordinates)
+   r=subprocess.run([sys.executable,str(PIPE),str(FIX),'--name',name,'--preset','baltic','--bbox','13.5','54.5','16.0','56.0','--no-switch','--max-rows','100','--force'],capture_output=True,text=True)
+   self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+   self.assertTrue(f_rep.exists())
+   with f_rep.open() as f:data=json.load(f)
+   self.assertEqual(data['bbox_west_south_east_north'],[13.5,54.5,16.0,56.0],'Explicit --bbox must take strict precedence over --preset')
+  finally:
+   for ext in ('.csv.gz','.sqlite','.csv.gz.report.json'):
+    (work/f'{name}{ext}').unlink(missing_ok=True)
 if __name__=='__main__':unittest.main()

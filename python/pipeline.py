@@ -9,8 +9,11 @@ import argparse
 import json
 import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -58,11 +61,11 @@ def run_pipeline(
     if not src.is_file():
         raise FileNotFoundError(f"Source ZIP not found: {src}")
 
-    # Determine bounding box
-    if preset and preset.lower() in PRESETS:
-        selected_bbox = PRESETS[preset.lower()]
-    elif bbox and len(bbox) == 4:
+    # Determine bounding box: EXPLICIT BBOX HAS STRICT PRECEDENCE
+    if bbox is not None and len(bbox) == 4:
         selected_bbox = [float(x) for x in bbox]
+    elif preset and preset.lower() in PRESETS:
+        selected_bbox = PRESETS[preset.lower()]
     else:
         selected_bbox = PRESETS["baltic"]
 
@@ -86,66 +89,100 @@ def run_pipeline(
     out_sqlite = WORK / f"{name}.sqlite"
     report_json = WORK / f"{name}.csv.gz.report.json"
 
-    # Enforce safe overwrite prevention
+    # Enforce safe overwrite prevention: refuse by default if target exists
     existing = [f.name for f in (out_csv_gz, report_json, out_sqlite) if f.exists()]
-    if existing:
-        if not force:
-            raise FileExistsError(
-                f"Output target '{name}' already exists in work/ ({', '.join(existing)}). "
-                f"Choose a new name or pass --force to overwrite."
-            )
-        for f in (out_csv_gz, report_json, out_sqlite):
-            f.unlink(missing_ok=True)
+    if existing and not force:
+        raise FileExistsError(
+            f"Output target '{name}' already exists in work/ ({', '.join(existing)}). "
+            f"Choose a new name or pass --force to overwrite."
+        )
 
-    print(f"\n[1/3] Preprocessing {src.name}...")
-    print(f"      BBox: {selected_bbox}")
-    print(f"      Max rows: {max_rows if max_rows else 'ALL (Full file)'}")
+    # Concurrency guard for target name
+    lock_file = WORK / f".lock_{name}"
+    if lock_file.exists():
+        try:
+            pid = int(lock_file.read_text().strip())
+            os.kill(pid, 0)
+            raise RuntimeError(f"Concurrent ingestion for target '{name}' is already in progress (PID {pid}).")
+        except (ValueError, OSError):
+            lock_file.unlink(missing_ok=True)
+    lock_file.write_text(str(os.getpid()))
 
-    cmd_prep = [
-        sys.executable,
-        str(PREPROCESS),
-        "run",
-        str(src),
-        "--output",
-        str(out_csv_gz),
-        "--bbox",
-        *(str(x) for x in selected_bbox),
-        "--assume-utc",
-        "--max-output-mb",
-        str(max_output_mb),
-    ]
-    if max_rows:
-        cmd_prep.extend(["--max-rows", str(max_rows)])
-
-    res_prep = subprocess.run(cmd_prep, capture_output=True, text=True)
-    if res_prep.returncode != 0:
-        raise RuntimeError(f"Preprocessing failed:\n{res_prep.stderr or res_prep.stdout}")
+    # Confined, versioned staging directory to preserve existing outputs on failure
+    staging_dir = WORK / f".staging_{name}_{int(time.time())}_{os.getpid()}"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staged_csv_gz = staging_dir / f"{name}.csv.gz"
+    staged_sqlite = staging_dir / f"{name}.sqlite"
+    staged_report_json = staging_dir / f"{name}.csv.gz.report.json"
 
     try:
-        prep_report = json.loads(res_prep.stdout)
-        rows_read = prep_report.get("counts", {}).get("rows_read", 0)
-        rows_written = prep_report.get("counts", {}).get("rows_written", 0)
-        t_min = prep_report.get("min_source_timestamp_utc", "N/A")
-        t_max = prep_report.get("max_source_timestamp_utc", "N/A")
-        print(f"      Rows read: {rows_read:,} -> Filtered matches: {rows_written:,}")
-        print(f"      Time span: {t_min} to {t_max}")
-    except Exception:
-        print("      Preprocessing finished.")
+        print(f"\n[1/3] Preprocessing {src.name} into staging...")
+        print(f"      BBox: {selected_bbox}")
+        print(f"      Max rows: {max_rows if max_rows else 'ALL (Full file)'}")
 
-    print(f"\n[2/3] Building SQLite index at {out_sqlite.name}...")
-    cmd_db = [
-        sys.executable,
-        str(LOCAL_AIS),
-        "build-db",
-        str(out_csv_gz),
-        "--output",
-        str(out_sqlite),
-        "--max-database-mb",
-        str(max_db_mb),
-    ]
-    res_db = subprocess.run(cmd_db, capture_output=True, text=True)
-    if res_db.returncode != 0:
-        raise RuntimeError(f"Database build failed:\n{res_db.stderr or res_db.stdout}")
+        cmd_prep = [
+            sys.executable,
+            str(PREPROCESS),
+            "run",
+            str(src),
+            "--output",
+            str(staged_csv_gz),
+            "--bbox",
+            *(str(x) for x in selected_bbox),
+            "--assume-utc",
+            "--max-output-mb",
+            str(max_output_mb),
+        ]
+        if max_rows:
+            cmd_prep.extend(["--max-rows", str(max_rows)])
+
+        res_prep = subprocess.run(cmd_prep, capture_output=True, text=True)
+        if res_prep.returncode != 0:
+            raise RuntimeError(f"Preprocessing failed:\n{res_prep.stderr or res_prep.stdout}")
+
+        try:
+            prep_report = json.loads(res_prep.stdout)
+            rows_read = prep_report.get("counts", {}).get("rows_read", 0)
+            rows_written = prep_report.get("counts", {}).get("rows_written", 0)
+            t_min = prep_report.get("min_source_timestamp_utc", "N/A")
+            t_max = prep_report.get("max_source_timestamp_utc", "N/A")
+            print(f"      Rows read: {rows_read:,} -> Filtered matches: {rows_written:,}")
+            print(f"      Time span: {t_min} to {t_max}")
+        except Exception:
+            print("      Preprocessing finished.")
+
+        print(f"\n[2/3] Building SQLite index in staging...")
+        cmd_db = [
+            sys.executable,
+            str(LOCAL_AIS),
+            "build-db",
+            str(staged_csv_gz),
+            "--output",
+            str(staged_sqlite),
+            "--max-database-mb",
+            str(max_db_mb),
+        ]
+        res_db = subprocess.run(cmd_db, capture_output=True, text=True)
+        if res_db.returncode != 0:
+            raise RuntimeError(f"Database build failed:\n{res_db.stderr or res_db.stdout}")
+
+        # Validate staged SQLite database
+        test_conn = sqlite3.connect(f"{staged_sqlite.as_uri()}?mode=ro", uri=True)
+        try:
+            test_conn.execute("SELECT json FROM metadata").fetchone()
+            test_conn.execute("SELECT 1 FROM fixes LIMIT 1").fetchone()
+        finally:
+            test_conn.close()
+
+        # Atomic publication: only update destination files once all stages succeed
+        os.replace(staged_csv_gz, out_csv_gz)
+        if staged_report_json.exists():
+            os.replace(staged_report_json, report_json)
+        os.replace(staged_sqlite, out_sqlite)
+        print(f"      SUCCESS: Published atomically to {out_sqlite.name}")
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        lock_file.unlink(missing_ok=True)
 
     try:
         db_meta = json.loads(res_db.stdout)
@@ -175,7 +212,7 @@ def main():
     p = argparse.ArgumentParser(description="Ingest any daily AIS ZIP archive into Cable Watch")
     p.add_argument("zip", help="Path to daily AIS ZIP archive (e.g. ~/Downloads/aisdk-2026-01-13.zip)")
     p.add_argument("--bbox", nargs=4, type=float, metavar=("WEST", "SOUTH", "EAST", "NORTH"), help="Custom bounding box")
-    p.add_argument("--preset", choices=list(PRESETS.keys()), default="baltic", help="Predefined bounding box preset")
+    p.add_argument("--preset", choices=list(PRESETS.keys()), default=None, help="Predefined bounding box preset")
     p.add_argument("--max-rows", type=int, default=1000000, help="Row limit (default: 1,000,000; set 0 for full file)")
     p.add_argument("--name", help="Custom identifier for generated sqlite file")
     p.add_argument("--max-output-mb", type=float, default=100.0, help="Max compressed CSV size in MB (default: 100)")
