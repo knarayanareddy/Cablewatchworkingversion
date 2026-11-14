@@ -144,15 +144,15 @@ class Handler(BaseHTTPRequestHandler):
     q=parse_qs(p.query);t=q.get('at',[''])[0];mins=int(q.get('window',['60'])[0])
     if not validtime(t) or not 1<=mins<=1440:raise ValueError('at must be YYYY-MM-DDTHH:MM:SSZ; window must be 1..1440 minutes')
     start=(dt.datetime.strptime(t,'%Y-%m-%dT%H:%M:%SZ')-dt.timedelta(minutes=mins)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    cur=c.execute('SELECT ts,mmsi,lat,lon,sog,cog,hdg,mobile,ship_type,name,nav,sog_q,cog_q,hdg_q FROM fixes WHERE ts>=? AND ts<=? ORDER BY ts DESC,rowid DESC LIMIT 20001',(start,t)); found={};scanned=0;truncated=False
+    cur=c.execute('SELECT ts,mmsi,lat,lon,sog,cog,hdg,mobile,ship_type,name,nav,sog_q,cog_q,hdg_q FROM fixes WHERE ts>=? AND ts<=? ORDER BY ts DESC,rowid DESC LIMIT 75001',(start,t)); found={};scanned=0;truncated=False
     names=['timestamp','mmsi','lat','lon','sog','cog','heading','mobile_type','ship_type','name','navigational_status','sog_quality','cog_quality','heading_quality']
     for row in cur:
      scanned+=1
-     if scanned>20000:truncated=True;break
+     if scanned>75000:truncated=True;break
      if row[1] not in found:
       if len(found)>=500:truncated=True;break
       found[row[1]]=dict(zip(names,row))
-    self.sendjson(200,{'as_of':t,'window_minutes':mins,'records_scanned':min(scanned,20000),'truncated':truncated,'limits':{'max_rows_scanned':20000,'max_vessels':500},'vessels':list(found.values()),'warning':'Latest visible point per MMSI within window; missing vessels are unknown, not absent. No live availability established.'})
+    self.sendjson(200,{'as_of':t,'window_minutes':mins,'records_scanned':min(scanned,75000),'truncated':truncated,'limits':{'max_rows_scanned':75000,'max_vessels':500},'vessels':list(found.values()),'warning':'Latest visible point per MMSI within window; missing vessels are unknown, not absent. No live availability established.'})
    finally:c.close()
   except (ValueError,sqlite3.Error,TypeError) as e:self.sendjson(400,{'error':str(e)})
 
