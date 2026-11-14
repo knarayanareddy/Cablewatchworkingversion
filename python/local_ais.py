@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build and locally serve an indexed, bounded AIS replay database (no third-party packages)."""
-import argparse,csv,datetime as dt,gzip,hashlib,json,os,sqlite3,sys,tempfile
+import argparse,csv,datetime as dt,gzip,hashlib,json,os,re,sqlite3,sys,tempfile
 from http.server import BaseHTTPRequestHandler,HTTPServer,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
@@ -30,6 +30,7 @@ def build(a):
   c=sqlite3.connect(str(tmp));c.execute('PRAGMA page_size=4096');c.execute('PRAGMA journal_mode=OFF');c.execute('PRAGMA temp_store=FILE');c.execute('PRAGMA synchronous=OFF'); pages=int(a.max_database_mb*1_000_000)//4096;c.execute('PRAGMA max_page_count='+str(pages))
   c.execute('CREATE TABLE fixes(ts TEXT NOT NULL, mmsi TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, sog REAL, cog REAL, hdg REAL, mobile TEXT, ship_type TEXT, name TEXT, nav TEXT, sog_q TEXT, cog_q TEXT, hdg_q TEXT)')
   c.execute('CREATE INDEX fixes_time ON fixes(ts)')
+  c.execute('CREATE INDEX fixes_vessel ON fixes(mmsi, ts)')
   c.execute('CREATE TABLE metadata(json TEXT NOT NULL)'); count=0;lo=None;hi=None
   with gzip.open(src,'rt',encoding='utf8',newline='') as f:
    r=csv.DictReader(f)
@@ -75,7 +76,7 @@ class Handler(BaseHTTPRequestHandler):
   # Reject DNS rebinding / external Host; no cross-origin headers or writes.
   if self.headers.get('Host')!=f'127.0.0.1:{self.server.server_port}':self.sendjson(403,{'error':'Forbidden host'});return
   p=urlparse(self.path)
-  if p.path not in ['/health','/meta','/snapshot','/datasets','/switch','/find-zips']:self.sendjson(404,{'error':'Not found'});return
+  if p.path not in ['/health','/meta','/snapshot','/track','/datasets','/switch','/find-zips']:self.sendjson(404,{'error':'Not found'});return
   try:
    if p.path=='/health':self.sendjson(200,{'ok':True});return
    if p.path=='/find-zips':
@@ -126,6 +127,20 @@ class Handler(BaseHTTPRequestHandler):
    uri=Path(self.server.db).as_uri()+'?mode=ro';c=sqlite3.connect(uri,uri=True,timeout=5)
    try:
     if p.path=='/meta':self.sendjson(200,json.loads(c.execute('SELECT json FROM metadata').fetchone()[0]));return
+    if p.path=='/track':
+     q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0];mins=int(q.get('window',['120'])[0]);lim=min(int(q.get('limit',['2000'])[0]),5000)
+     if not re.fullmatch(r'[0-9]{9}',mmsi):raise ValueError('mmsi must be a 9-digit string')
+     if not validtime(t) or not 1<=mins<=1440:raise ValueError('at must be YYYY-MM-DDTHH:MM:SSZ; window must be 1..1440 minutes')
+     start=(dt.datetime.strptime(t,'%Y-%m-%dT%H:%M:%SZ')-dt.timedelta(minutes=mins)).strftime('%Y-%m-%dT%H:%M:%SZ')
+     cur=c.execute('SELECT ts,mmsi,lat,lon,sog,cog,hdg,mobile,ship_type,name,nav,sog_q,cog_q,hdg_q,rowid FROM fixes WHERE mmsi=? AND ts>=? AND ts<=? ORDER BY ts ASC,rowid ASC LIMIT ?',(mmsi,start,t,lim+1))
+     names=['timestamp','mmsi','lat','lon','sog','cog','heading','mobile_type','ship_type','name','navigational_status','sog_quality','cog_quality','heading_quality','rowid']
+     track_fixes=[];scanned=0;truncated=False
+     for row in cur:
+      scanned+=1
+      if scanned>lim:truncated=True;break
+      track_fixes.append(dict(zip(names,row)))
+     self.sendjson(200,{'mmsi':mmsi,'as_of':t,'window_minutes':mins,'fixes_count':len(track_fixes),'truncated':truncated,'limit':lim,'fixes':track_fixes})
+     return
     q=parse_qs(p.query);t=q.get('at',[''])[0];mins=int(q.get('window',['60'])[0])
     if not validtime(t) or not 1<=mins<=1440:raise ValueError('at must be YYYY-MM-DDTHH:MM:SSZ; window must be 1..1440 minutes')
     start=(dt.datetime.strptime(t,'%Y-%m-%dT%H:%M:%SZ')-dt.timedelta(minutes=mins)).strftime('%Y-%m-%dT%H:%M:%SZ')

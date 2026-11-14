@@ -33,6 +33,7 @@ type Snapshot = {
   window_minutes: number;
   records_scanned: number;
   truncated: boolean;
+  limits?: { max_rows_scanned: number; max_vessels: number };
   vessels: Fix[];
   warning: string;
 };
@@ -435,6 +436,40 @@ function nearKm(f: Fix, lines: Lines): number {
   return best;
 }
 
+// Smallest circular difference between compass bearings (degrees [0, 180])
+export function smallestCircularDiff(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+export interface TrackFix extends Fix {
+  rowid?: number;
+}
+
+export interface ExperimentalTrackResult {
+  mmsi: string;
+  contributingFixesCount: number;
+  timeSpanMin: number;
+  meanSog: number | null;
+  meanDriftAngle: number | null;
+  sustainedCorridorFixes: number;
+  score: number;
+  tier: 'cue' | 'review' | 'normal';
+  reason: string;
+  contributingFixes: {
+    timestamp: string;
+    lat: number;
+    lon: number;
+    sog: number | null;
+    cog: number | null;
+    heading: number | null;
+    drift: number | null;
+    distKm: number | null;
+    isConflicting: boolean;
+    gapSec: number | null;
+  }[];
+}
+
 // Anomaly Assessment Record
 export interface AnomalyResult {
   vessel: Fix;
@@ -444,6 +479,8 @@ export interface AnomalyResult {
   speedDeficit: number;
   driftAngle: number | null;
   reason: string;
+  fixAgeSec: number;
+  isStale: boolean;
 }
 
 // ISR Sortie Plan Interface
@@ -478,6 +515,16 @@ export default function Real() {
   const [geomName, setGeomName] = useState('ALL');
   const [corridorKm, setCorridorKm] = useState(4);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
+  const [trackData, setTrackData] = useState<{
+    mmsi: string;
+    as_of: string;
+    window_minutes: number;
+    fixes_count: number;
+    truncated: boolean;
+    fixes: TrackFix[];
+  } | null>(null);
+  const [trackLoading, setTrackLoading] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(5); // Default to 5x for visible motion
   const [error, setError] = useState('');
@@ -647,6 +694,26 @@ export default function Real() {
       });
   }, [at, win]);
 
+  // Fetch Historical Track Data for Selected Vessel
+  useEffect(() => {
+    if (!selectedMmsi || !at) {
+      setTrackData(null);
+      return;
+    }
+    setTrackLoading(true);
+    fetch(`/api/local-ais/track?mmsi=${encodeURIComponent(selectedMmsi)}&at=${encodeURIComponent(at)}&window=120`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw Error(j.error);
+        setTrackData(j);
+      })
+      .catch((e) => {
+        console.error('Failed to load track data:', e);
+        setTrackData(null);
+      })
+      .finally(() => setTrackLoading(false));
+  }, [selectedMmsi, at]);
+
   // Auto-play timer with in-flight backpressure guard
   useEffect(() => {
     if (!isPlaying || !meta) {
@@ -812,12 +879,17 @@ export default function Real() {
           speedDeficit = baseline - sog;
         }
 
-        // Heading vs Course Drift Angle
+        // Heading vs Course Drift Angle (Smallest circular arc)
         let driftAngle: number | null = null;
         if (v.heading !== null && v.cog !== null) {
-          const diff = Math.abs(v.heading - v.cog) % 360;
-          driftAngle = diff > 180 ? 360 - diff : diff;
+          driftAngle = smallestCircularDiff(v.heading, v.cog);
         }
+
+        // Fix Age Relative to Selected Replay Time
+        const curTimestampSec = at ? Date.parse(at) / 1000 : 0;
+        const fixTsSec = Date.parse(v.timestamp) / 1000;
+        const fixAgeSec = Math.max(0, Math.floor(curTimestampSec - fixTsSec));
+        const isStale = fixAgeSec >= 900; // >= 15 min without new broadcast
 
         // Anomaly Score Formulation
         let score = 0;
@@ -881,10 +953,12 @@ export default function Real() {
           speedDeficit,
           driftAngle,
           reason,
+          fixAgeSec,
+          isStale,
         };
       })
       .sort((a, b) => b.score - a.score || (a.dist ?? Infinity) - (b.dist ?? Infinity));
-  }, [snap, lines, local, corridorKm]);
+  }, [snap, lines, local, corridorKm, at]);
 
   // -------------------------------------------------------------
   // FEATURE 6: ISR ASSET PLANNER (configurable base, speed & endurance)
@@ -956,6 +1030,109 @@ export default function Real() {
     () => analyzedVessels.find((r) => r.vessel.mmsi === selectedMmsi) ?? null,
     [analyzedVessels, selectedMmsi]
   );
+
+  // Experimental Multi-Fix Track-Based Score Formulation
+  const experimentalTrackScore: ExperimentalTrackResult | null = useMemo(() => {
+    if (!selectedVessel || !trackData || !trackData.fixes || trackData.fixes.length === 0) return null;
+    const fixes = trackData.fixes;
+    const typeLower = (selectedVessel.vessel.ship_type || 'undefined').toLowerCase();
+    const isFishing = typeLower.includes('fish') || typeLower.includes('trawl');
+
+    const processed = fixes.map((f, idx) => {
+      const curTs = Date.parse(f.timestamp) / 1000;
+      const dist = lines.length && local ? nearKm(f, lines) : null;
+      let drift: number | null = null;
+      if (f.heading !== null && f.cog !== null) {
+        drift = smallestCircularDiff(f.heading, f.cog);
+      }
+      const isConflicting =
+        idx > 0 &&
+        fixes[idx - 1].timestamp === f.timestamp &&
+        (fixes[idx - 1].lat !== f.lat || fixes[idx - 1].lon !== f.lon);
+      const gapSec = idx > 0 ? curTs - Date.parse(fixes[idx - 1].timestamp) / 1000 : null;
+
+      return {
+        timestamp: f.timestamp,
+        lat: f.lat,
+        lon: f.lon,
+        sog: f.sog,
+        cog: f.cog,
+        heading: f.heading,
+        drift,
+        distKm: dist,
+        isConflicting,
+        gapSec,
+      };
+    });
+
+    const validSogs = processed.map((p) => p.sog).filter((s): s is number => s !== null);
+    const meanSog = validSogs.length ? validSogs.reduce((a, b) => a + b, 0) / validSogs.length : null;
+
+    const validDrifts = processed.map((p) => p.drift).filter((d): d is number => d !== null);
+    const meanDrift = validDrifts.length ? validDrifts.reduce((a, b) => a + b, 0) / validDrifts.length : null;
+
+    const insideCorridorFixes = processed.filter((p) => p.distKm !== null && p.distKm <= corridorKm);
+    const slowInsideFixes = insideCorridorFixes.filter(
+      (p) => p.sog !== null && p.sog > 0.5 && p.sog < 6.0 && !isFishing
+    );
+
+    const tFirst = Date.parse(processed[0].timestamp) / 1000;
+    const tLast = Date.parse(processed[processed.length - 1].timestamp) / 1000;
+    const timeSpanMin = Math.max(0, Math.round((tLast - tFirst) / 60));
+
+    let expScore = 0;
+    const expReasons: string[] = [];
+
+    // 1. Sustained Corridor Transit Duration
+    if (slowInsideFixes.length >= 3 && timeSpanMin >= 15) {
+      const dwellWeight = Math.min(3.5, 1.5 + (timeSpanMin / 30) * 1.5);
+      expScore += dwellWeight;
+      expReasons.push(
+        `sustained slow transit over infrastructure corridor (${timeSpanMin} min across ${slowInsideFixes.length} observations)`
+      );
+    } else if (insideCorridorFixes.length > 0) {
+      expScore += 1.0;
+      expReasons.push(`${insideCorridorFixes.length} observations inside ${corridorKm}km corridor buffer`);
+    }
+
+    // 2. Mean Velocity Deficit across Track
+    if (meanSog !== null && meanSog > 0.5 && meanSog < 6.0 && !isFishing) {
+      expScore += 2.0;
+      expReasons.push(`mean track speed ${meanSog.toFixed(1)} kn indicates sustained low velocity`);
+    } else if (isFishing && meanSog !== null && meanSog < 4.5) {
+      expScore = Math.max(0, expScore - 2.0);
+      expReasons.push('mean speed consistent with standard trawling profile');
+    }
+
+    // 3. Persistent Course / Heading Divergence
+    if (meanDrift !== null && meanDrift > 14 && validDrifts.length >= 3) {
+      const driftWeight = Math.min(3.0, (meanDrift - 10) * 0.15);
+      expScore += driftWeight;
+      expReasons.push(
+        `persistent course/heading divergence: avg Δ = ${meanDrift.toFixed(0)}° across ${validDrifts.length} observations`
+      );
+    }
+
+    let expTier: 'cue' | 'review' | 'normal' = 'normal';
+    if (expScore >= 4.2) expTier = 'cue';
+    else if (expScore >= 2.2) expTier = 'review';
+
+    return {
+      mmsi: selectedVessel.vessel.mmsi,
+      contributingFixesCount: processed.length,
+      timeSpanMin,
+      meanSog,
+      meanDriftAngle: meanDrift,
+      sustainedCorridorFixes: insideCorridorFixes.length,
+      score: expScore,
+      tier: expTier,
+      reason:
+        expReasons.length > 0
+          ? `EXPERIMENTAL TRACK EVALUATION: ${expReasons.join('; ')}.`
+          : 'Normal multi-fix transit behavior; no sustained corridor dwell or persistent drift anomaly.',
+      contributingFixes: processed,
+    };
+  }, [selectedVessel, trackData, lines, corridorKm, local]);
 
   const minSec = meta ? Date.parse(meta.min_timestamp_utc) / 1000 : 0;
   const maxSec = meta ? Date.parse(meta.max_timestamp_utc) / 1000 : 0;
@@ -1217,6 +1394,59 @@ export default function Real() {
                   <span>{meta.max_timestamp_utc}</span>
                 </div>
               </div>
+            </div>
+
+            {/* Dataset Provenance, Time Span & Truncation Alert Bar */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#07101f] border border-slate-800 p-2 text-xs font-mono">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-slate-400">Observed Span:</span>
+                  <span className="text-cyan-300 font-bold">
+                    {meta?.min_timestamp_utc && meta?.max_timestamp_utc
+                      ? `${meta.min_timestamp_utc} → ${meta.max_timestamp_utc}`
+                      : 'Unknown'}
+                  </span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-slate-400">Processing BBox:</span>
+                  <span className="text-amber-300 font-bold">
+                    {meta?.preprocessor_report?.bbox_west_south_east_north
+                      ? `[${meta.preprocessor_report.bbox_west_south_east_north.join(', ')}]`
+                      : 'Unknown'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Total Indexed Fixes: <span className="text-white font-bold">{meta?.records ? meta.records.toLocaleString() : 'Unknown'}</span>
+                </div>
+              </div>
+
+              {/* Truncation Banners */}
+              {meta?.preprocessor_report?.truncated_by_row_limit && (
+                <div className="rounded-lg bg-amber-950/70 border border-amber-600/80 p-2.5 text-xs text-amber-200 flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">⚠️</span>
+                    <span>
+                      <b>Dataset Ingestion Truncated:</b> Preprocessor stopped at row limit. Does not represent full-day coverage (observed until {meta.max_timestamp_utc}).
+                    </span>
+                  </div>
+                  <span className="rounded bg-amber-900/80 border border-amber-500/60 px-2 py-0.5 text-[10px] font-mono font-bold uppercase">
+                    Sample / Partial
+                  </span>
+                </div>
+              )}
+
+              {snap?.truncated && (
+                <div className="rounded-lg bg-rose-950/70 border border-rose-600/80 p-2.5 text-xs text-rose-200 flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">⚠️</span>
+                    <span>
+                      <b>Replay Query Truncated:</b> Snapshot hit safety limit ({snap.limits?.max_rows_scanned || 20000} scanned rows or {snap.limits?.max_vessels || 500} vessels). Some observations in this lookback window may be omitted.
+                    </span>
+                  </div>
+                  <span className="rounded bg-rose-900/80 border border-rose-500/60 px-2 py-0.5 text-[10px] font-mono font-bold uppercase">
+                    Scan Capped
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Subsea Cable & Infrastructure Corridor Selector Bar */}
@@ -1589,6 +1819,44 @@ export default function Real() {
                     </g>
                   )}
 
+                  {/* Selected Vessel Historical Track & Breadcrumb Points */}
+                  {selectedMmsi && trackData && trackData.fixes.length > 1 && (
+                    <g className="vessel-track-layer" pointerEvents="none">
+                      <polyline
+                        points={trackData.fixes
+                          .map((f) => {
+                            const [px, py] = project([f.lon, f.lat]);
+                            return `${px.toFixed(1)},${py.toFixed(1)}`;
+                          })
+                          .join(' ')}
+                        fill="none"
+                        stroke="#38bdf8"
+                        strokeWidth="2"
+                        strokeDasharray="4,3"
+                        strokeOpacity="0.85"
+                      />
+                      {trackData.fixes.map((f, i) => {
+                        const [px, py] = project([f.lon, f.lat]);
+                        const isConflicting =
+                          i > 0 &&
+                          trackData.fixes[i - 1].timestamp === f.timestamp &&
+                          (trackData.fixes[i - 1].lat !== f.lat || trackData.fixes[i - 1].lon !== f.lon);
+                        return (
+                          <circle
+                            key={`hist-pt-${f.rowid || i}`}
+                            cx={px}
+                            cy={py}
+                            r={isConflicting ? 4.5 : 2.5}
+                            fill={isConflicting ? '#f43f5e' : '#0284c7'}
+                            stroke={isConflicting ? '#ffffff' : '#38bdf8'}
+                            strokeWidth={isConflicting ? 1.5 : 0.8}
+                            opacity={0.9}
+                          />
+                        );
+                      })}
+                    </g>
+                  )}
+
                   {/* Render Vessels with Heading Vectors & Behavior Tiers */}
                   {analyzedVessels.map((a) => {
                     const v = a.vessel;
@@ -1804,13 +2072,13 @@ export default function Real() {
                       <div className="flex justify-between">
                         <span className="text-slate-400">Speed (SOG):</span>
                         <span className="font-bold text-amber-300">
-                          {selectedVessel.vessel.sog !== null ? `${selectedVessel.vessel.sog} kn` : 'N/A'}
+                          {selectedVessel.vessel.sog !== null ? `${selectedVessel.vessel.sog} kn` : <span className="text-slate-500 italic font-normal">missing</span>}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Heading Drift (Δ):</span>
                         <span className={`font-bold ${selectedVessel.driftAngle && selectedVessel.driftAngle > 15 ? 'text-rose-400' : 'text-slate-300'}`}>
-                          {selectedVessel.driftAngle !== null ? `${selectedVessel.driftAngle.toFixed(0)}°` : 'N/A'}
+                          {selectedVessel.driftAngle !== null ? `${selectedVessel.driftAngle.toFixed(0)}°` : <span className="text-slate-500 italic font-normal">missing</span>}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -1825,8 +2093,15 @@ export default function Real() {
                           {selectedVessel.dist !== null ? `~${selectedVessel.dist.toFixed(2)} km` : 'N/A'}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Fix Freshness (Age):</span>
+                        <span className={`font-bold ${selectedVessel.isStale ? 'text-amber-400 animate-pulse' : 'text-emerald-300'}`}>
+                          {selectedVessel.fixAgeSec < 60 ? `${selectedVessel.fixAgeSec}s ago` : `${Math.floor(selectedVessel.fixAgeSec / 60)}m ago`}{' '}
+                          {selectedVessel.isStale ? '(STALE >15m)' : '(Fresh)'}
+                        </span>
+                      </div>
                       <div className="flex justify-between border-t border-slate-800 pt-2">
-                        <span className="text-slate-400">Anomaly Score:</span>
+                        <span className="text-slate-400">Single-Fix Score:</span>
                         <span className="font-bold text-white text-sm">
                           {selectedVessel.score.toFixed(2)}
                         </span>
@@ -1834,9 +2109,137 @@ export default function Real() {
 
                       {/* Human-Readable Reason Text Box */}
                       <div className="rounded bg-slate-900 border border-slate-700/60 p-2.5 text-[11px] font-sans leading-relaxed text-slate-200">
-                        <b className="text-amber-400 font-mono block mb-1">Human-Readable Assessment:</b>
+                        <b className="text-amber-400 font-mono block mb-1">Single-Fix Heuristic Assessment:</b>
                         {selectedVessel.reason}
                       </div>
+
+                      {/* Experimental Multi-Fix Track-Based Assessment Card */}
+                      <div className="rounded-lg bg-[#071324] border border-cyan-800/80 p-3 space-y-2 mt-3">
+                        <div className="flex items-center justify-between border-b border-cyan-900/60 pb-1.5">
+                          <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1 font-mono">
+                            <span>🧪</span> Experimental Track Score
+                          </span>
+                          {experimentalTrackScore ? (
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[9px] font-bold font-mono ${
+                                experimentalTrackScore.tier === 'cue'
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                  : experimentalTrackScore.tier === 'review'
+                                  ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {experimentalTrackScore.score.toFixed(2)} · {experimentalTrackScore.tier.toUpperCase()}
+                            </span>
+                          ) : trackLoading ? (
+                            <span className="text-[10px] text-cyan-400 animate-pulse">Loading track...</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">No track data</span>
+                          )}
+                        </div>
+
+                        {experimentalTrackScore && (
+                          <div className="text-[11px] space-y-1.5 font-mono">
+                            <div className="flex justify-between text-slate-400">
+                              <span>Track Evidence:</span>
+                              <span className="text-slate-200">
+                                {experimentalTrackScore.contributingFixesCount} fixes over {experimentalTrackScore.timeSpanMin} min
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-slate-400">
+                              <span>Mean Velocity:</span>
+                              <span className="text-amber-300 font-bold">
+                                {experimentalTrackScore.meanSog !== null ? `${experimentalTrackScore.meanSog.toFixed(1)} kn` : 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-slate-400">
+                              <span>Mean Divergence:</span>
+                              <span className="text-slate-200 font-bold">
+                                {experimentalTrackScore.meanDriftAngle !== null ? `${experimentalTrackScore.meanDriftAngle.toFixed(0)}°` : 'N/A'}
+                              </span>
+                            </div>
+
+                            <div className="rounded bg-slate-900/80 border border-cyan-900/40 p-2 text-[10px] text-cyan-200 font-sans leading-relaxed">
+                              {experimentalTrackScore.reason}
+                            </div>
+                            <div className="text-[9px] text-slate-500 italic font-sans leading-normal">
+                              * Note: AIS data provides behavioral telemetry only; it does not prove physical anchor deployment, seabed contact, damage, or intent.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Toggle Evidence Timeline Button */}
+                      <button
+                        onClick={() => setShowTimeline(!showTimeline)}
+                        className="w-full mt-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 py-1.5 text-xs text-cyan-300 font-mono font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <span>{showTimeline ? '▲ Hide Evidence Timeline' : '▼ View Evidence Timeline'}</span>
+                        <span className="text-[10px] text-slate-400">({trackData?.fixes_count || 0} fixes)</span>
+                      </button>
+
+                      {/* Evidence Timeline Drawer */}
+                      {showTimeline && trackData && (
+                        <div className="mt-2 rounded-lg border border-slate-700 bg-[#050b14] p-2 space-y-1.5 font-mono">
+                          <div className="text-[10px] text-slate-400 flex items-center justify-between border-b border-slate-800 pb-1">
+                            <span className="font-bold text-slate-300">Evidence Observations (ts ≤ at)</span>
+                            <span>{trackData.fixes_count} fixes</span>
+                          </div>
+                          <div className="max-h-52 overflow-y-auto text-[10px] divide-y divide-slate-800/60 pr-1">
+                            {experimentalTrackScore?.contributingFixes.map((f, i) => (
+                              <div
+                                key={`fix-${i}`}
+                                className={`py-1 flex items-center justify-between gap-1 ${
+                                  f.isConflicting ? 'bg-rose-950/40 text-rose-300 p-1 rounded' : ''
+                                }`}
+                              >
+                                <div>
+                                  <span className="text-cyan-400">{f.timestamp.slice(11, 19)}Z</span>
+                                  {f.gapSec !== null && f.gapSec > 0 && (
+                                    <span className="text-slate-500 ml-1">(+{(f.gapSec / 60).toFixed(1)}m)</span>
+                                  )}
+                                  {f.isConflicting && (
+                                    <span className="ml-1 text-[9px] bg-rose-900 px-1 py-0.2 rounded text-white font-bold font-sans">
+                                      CONFLICTING POS
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right space-x-1.5">
+                                  <span>
+                                    SOG:{' '}
+                                    <b className="text-amber-300">
+                                      {f.sog !== null ? (
+                                        `${f.sog.toFixed(1)}kn`
+                                      ) : (
+                                        <i className="text-slate-500 font-normal">missing</i>
+                                      )}
+                                    </b>
+                                  </span>
+                                  <span>
+                                    HDG:{' '}
+                                    <b className="text-slate-300">
+                                      {f.heading !== null ? (
+                                        `${f.heading.toFixed(0)}°`
+                                      ) : (
+                                        <i className="text-slate-500 font-normal">missing</i>
+                                      )}
+                                    </b>
+                                  </span>
+                                  <span>
+                                    Dist:{' '}
+                                    <b className="text-emerald-400">
+                                      {f.distKm !== null ? `${f.distKm.toFixed(1)}km` : 'N/A'}
+                                    </b>
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="text-[9px] text-slate-500 border-t border-slate-800/80 pt-1 leading-normal font-sans">
+                            Evidence timeline displays observations up to replay time. Single-fix score uses latest fix; experimental score evaluates sustained sequence.
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="py-6 text-center text-xs text-slate-500 font-mono">
@@ -2005,6 +2408,14 @@ export default function Real() {
                     </span>
                   </div>
 
+                  {/* Reproducible Alert Episode Status Indicator */}
+                  <div className="mb-2 p-1.5 rounded bg-[#071120] border border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between">
+                    <span>24h Alert Episodes:</span>
+                    <span className="text-amber-400 font-semibold" title="Reproducible Episode Rule: Requires contiguous 24h archive with 30m continuity threshold. Snapshot count is not an episode count.">
+                      Unavailable (Requires 24h baseline)
+                    </span>
+                  </div>
+
                   <div className="max-h-56 overflow-y-auto font-mono text-xs pr-1">
                     <table className="w-full text-left">
                       <thead>
@@ -2032,8 +2443,17 @@ export default function Real() {
                               }`}
                             >
                               <td className="py-1.5 font-sans truncate max-w-[120px]">
-                                <div className="font-bold text-xs">{a.vessel.name || a.vessel.mmsi}</div>
-                                <div className="text-[10px] text-slate-500">{a.vessel.ship_type || 'Unknown'} · {a.vessel.sog ?? 0}kn</div>
+                                <div className="font-bold text-xs flex items-center gap-1.5">
+                                  <span className="truncate">{a.vessel.name || a.vessel.mmsi}</span>
+                                  {a.isStale && (
+                                    <span className="text-[8px] bg-amber-950 text-amber-300 border border-amber-800 rounded px-1 font-mono uppercase">
+                                      STALE
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {a.vessel.ship_type || 'Unknown'} · {a.vessel.sog !== null ? `${a.vessel.sog}kn` : 'null'} · {a.fixAgeSec < 60 ? `${a.fixAgeSec}s` : `${Math.floor(a.fixAgeSec / 60)}m`} ago
+                                </div>
                               </td>
                               <td className="py-1.5">
                                 <span

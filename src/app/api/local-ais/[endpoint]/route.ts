@@ -4,7 +4,7 @@ import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_GET = ['meta', 'snapshot', 'datasets', 'switch', 'find-zips'];
+const ALLOWED_GET = ['meta', 'snapshot', 'track', 'datasets', 'switch', 'find-zips'];
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) {
   const { endpoint } = await ctx.params;
