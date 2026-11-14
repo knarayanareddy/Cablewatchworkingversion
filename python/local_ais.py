@@ -76,7 +76,7 @@ class Handler(BaseHTTPRequestHandler):
   # Reject DNS rebinding / external Host; no cross-origin headers or writes.
   if self.headers.get('Host')!=f'127.0.0.1:{self.server.server_port}':self.sendjson(403,{'error':'Forbidden host'});return
   p=urlparse(self.path)
-  if p.path not in ['/health','/meta','/snapshot','/track','/datasets','/switch','/find-zips']:self.sendjson(404,{'error':'Not found'});return
+  if p.path not in ['/health','/meta','/snapshot','/track','/datasets','/switch','/find-zips','/ml-score']:self.sendjson(404,{'error':'Not found'});return
   try:
    if p.path=='/health':self.sendjson(200,{'ok':True});return
    if p.path=='/find-zips':
@@ -127,6 +127,51 @@ class Handler(BaseHTTPRequestHandler):
    uri=Path(self.server.db).as_uri()+'?mode=ro';c=sqlite3.connect(uri,uri=True,timeout=5)
    try:
     if p.path=='/meta':self.sendjson(200,json.loads(c.execute('SELECT json FROM metadata').fetchone()[0]));return
+    if p.path=='/ml-score':
+     q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0]
+     if not re.fullmatch(r'[0-9]{9}',mmsi):self.sendjson(400,{'status':'invalid_request','error':'mmsi must be a 9-digit string'});return
+     if not validtime(t):self.sendjson(400,{'status':'invalid_request','error':'at must be YYYY-MM-DDTHH:MM:SSZ'});return
+     corridor=[[[13.82,54.82],[13.95,54.94],[14.05,55.04],[14.18,55.15],[14.32,55.28]]]
+     try:
+      import sys
+      from pathlib import Path as P
+      root=P(__file__).resolve().parents[1]
+      if str(root) not in sys.path:sys.path.insert(0,str(root))
+      from python.ml.features import extract_track_features, FeatureExtractionError
+      from python.ml.model import MLModelManifest
+     except ImportError as ie:
+      self.sendjson(200,{'status':'model_unavailable','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':f'ML dependencies unavailable: {ie}'});return
+     manifest_file=root/'models/v1/bornholm_cargo_synthetic.json'
+     if not manifest_file.is_file():
+      self.sendjson(200,{'status':'insufficient_baseline','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':'No baseline model manifest trained for this area/class.'});return
+     try:
+      feats=extract_track_features(self.server.db,mmsi=mmsi,as_of=t,lines=corridor,corridor_id='bornholm_power',lookback_minutes=60)
+      model=MLModelManifest.load(manifest_file)
+      ev=model.evaluate(feats['features'])
+      self.sendjson(200,{
+       'status':'ok',
+       'mode':'shadow_experimental',
+       'mmsi':mmsi,
+       'as_of':t,
+       'dataset_id':P(self.server.db).name,
+       'model_id':ev['model_id'],
+       'training_end':ev['training_end'],
+       'area_id':ev['area_id'],
+       'class_group':feats['class_group'],
+       'feature_version':ev['feature_version'],
+       'geometry_hash':ev['geometry_hash'],
+       'track_window':feats['track_window'],
+       'anomaly_percentile':ev['anomaly_percentile'],
+       'baseline_robust_score':ev['baseline_robust_score'],
+       'comparison_features':ev['comparison_features'],
+       'caveats':ev['caveats'],
+       'is_synthetic_demo':ev['is_synthetic_demo']
+      })
+      return
+     except FeatureExtractionError as fe:
+      self.sendjson(200,{'status':fe.code,'mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':fe.message,'details':fe.details});return
+     except Exception as ex:
+      self.sendjson(200,{'status':'error','mode':'shadow_experimental','mmsi':mmsi,'as_of':t,'reason':str(ex)});return
     if p.path=='/track':
      q=parse_qs(p.query);mmsi=q.get('mmsi',[''])[0];t=q.get('at',[''])[0];mins=int(q.get('window',['120'])[0]);lim=max(1,min(int(q.get('limit',['5000'])[0]),20000))
      if not re.fullmatch(r'[0-9]{9}',mmsi):raise ValueError('mmsi must be a 9-digit string')

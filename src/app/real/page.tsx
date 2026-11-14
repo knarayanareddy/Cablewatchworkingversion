@@ -59,6 +59,60 @@ type DiscoveredZip = {
 type XY = [number, number];
 type Lines = XY[][];
 
+type MLComparisonFeature = {
+  name: string;
+  value: number;
+  unit: string;
+  training_median: number;
+  training_iqr: number;
+  robust_deviation: number;
+};
+
+type MLScoreResponse = {
+  status: 'ok' | 'insufficient_track' | 'insufficient_baseline' | 'model_unavailable' | 'error' | 'invalid_request';
+  mode: string;
+  mmsi: string;
+  as_of: string;
+  dataset_id?: string;
+  model_id?: string;
+  training_end?: string;
+  area_id?: string;
+  class_group?: string;
+  feature_version?: string;
+  geometry_hash?: string;
+  track_window?: {
+    window_minutes: number;
+    distinct_timestamps: number;
+    first_ts: string;
+    last_ts: string;
+    span_minutes: number;
+  };
+  anomaly_percentile?: number;
+  baseline_robust_score?: number;
+  comparison_features?: MLComparisonFeature[];
+  caveats?: string[];
+  is_synthetic_demo?: boolean;
+  reason?: string;
+  details?: Record<string, unknown>;
+};
+
+function formatFeatureName(name: string): string {
+  switch (name) {
+    case 'median_sog_kn': return 'Median Speed (SOG)';
+    case 'sog_iqr_kn': return 'Speed Dispersion (IQR)';
+    case 'slow_time_fraction': return 'Slow Dwell Ratio (<3kn)';
+    case 'median_corridor_distance_km': return 'Median Corridor Dist';
+    default: return name;
+  }
+}
+
+function formatFeatureValue(name: string, val: number, unit: string): string {
+  if (name === 'slow_time_fraction') {
+    return `${(val * 100).toFixed(0)}%`;
+  }
+  return `${val.toFixed(1)}${unit ? ' ' + unit : ''}`;
+}
+
 const R = 6371.0088; // Earth radius in km
 
 // Standard class baselines for Baltic commercial traffic (knots)
@@ -501,6 +555,15 @@ export default function Real() {
   } | null>(null);
   const [trackLoading, setTrackLoading] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [enableMLShadow, setEnableMLShadow] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cablewatch_enable_ml_shadow');
+      if (saved !== null) return saved === 'true';
+    }
+    return process.env.NEXT_PUBLIC_ENABLE_ML_SHADOW === 'true';
+  });
+  const [mlScore, setMlScore] = useState<MLScoreResponse | null>(null);
+  const [mlLoading, setMlLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(5); // Default to 5x for visible motion
   const [error, setError] = useState('');
@@ -689,6 +752,48 @@ export default function Real() {
       })
       .finally(() => setTrackLoading(false));
   }, [selectedMmsi, at]);
+
+  // Fetch ML Shadow-Mode Assessment for Selected Vessel (when enabled)
+  useEffect(() => {
+    if (!enableMLShadow || !selectedMmsi || !at) {
+      setMlScore(null);
+      setMlLoading(false);
+      return;
+    }
+
+    let active = true;
+    setMlLoading(true);
+
+    fetch(`/api/local-ais/ml-score?mmsi=${encodeURIComponent(selectedMmsi)}&at=${encodeURIComponent(at)}`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (active) {
+          if (j.mmsi === selectedMmsi && j.as_of === at) {
+            setMlScore(j);
+          }
+        }
+      })
+      .catch((e) => {
+        if (active) {
+          setMlScore({
+            status: 'error',
+            mode: 'shadow_experimental',
+            mmsi: selectedMmsi,
+            as_of: at,
+            reason: String(e?.message || e)
+          });
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setMlLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enableMLShadow, selectedMmsi, at]);
 
   // Auto-play timer with in-flight backpressure guard
   useEffect(() => {
@@ -2065,6 +2170,162 @@ export default function Real() {
                             </div>
                             <div className="text-[9px] text-slate-500 italic font-sans leading-normal">
                               * Note: AIS data provides behavioral telemetry only; it does not prove physical anchor deployment, seabed contact, damage, or intent.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ML Shadow-Mode Historical Pattern Comparison Card */}
+                      <div className="rounded-lg bg-[#0c1222] border border-indigo-800/80 p-3 space-y-2 mt-3">
+                        <div className="flex items-center justify-between border-b border-indigo-900/60 pb-1.5">
+                          <div className="flex items-center gap-1.5 font-mono">
+                            <span className="text-[11px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1">
+                              <span>🔬</span> Pattern Comparison
+                            </span>
+                            <span className="rounded bg-indigo-950 text-indigo-300 border border-indigo-700/60 text-[9px] px-1 py-0.2 font-sans font-semibold">
+                              Shadow Mode
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const next = !enableMLShadow;
+                              setEnableMLShadow(next);
+                              if (typeof window !== 'undefined') {
+                                localStorage.setItem('cablewatch_enable_ml_shadow', String(next));
+                              }
+                            }}
+                            className={`rounded px-1.5 py-0.5 text-[9px] font-bold font-mono border transition-colors cursor-pointer ${
+                              enableMLShadow
+                                ? 'bg-indigo-900/60 text-indigo-200 border-indigo-500 hover:bg-indigo-800/80'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                            }`}
+                            title="Toggle ML shadow-mode second-opinion evaluation"
+                          >
+                            {enableMLShadow ? 'SHADOW: ON' : 'SHADOW: OFF'}
+                          </button>
+                        </div>
+
+                        {!enableMLShadow ? (
+                          <div className="text-[10px] text-slate-400 font-sans py-1 flex items-center justify-between">
+                            <span>Historical pattern comparison is disabled (default-off).</span>
+                            <span className="text-slate-500 text-[9px]">Click toggle to enable</span>
+                          </div>
+                        ) : mlLoading ? (
+                          <div className="text-[10px] text-indigo-400 font-mono animate-pulse py-2 flex items-center gap-2">
+                            <span>⏳</span> Evaluating 60m track window against baseline model...
+                          </div>
+                        ) : !mlScore ? (
+                          <div className="text-[10px] text-slate-500 font-sans py-1">
+                            No ML shadow evaluation available for this vessel.
+                          </div>
+                        ) : mlScore.status === 'ok' ? (
+                          <div className="space-y-2 text-[11px] font-mono">
+                            {/* Anomaly Percentile & Headline */}
+                            <div className="flex items-center justify-between bg-indigo-950/40 p-2 rounded border border-indigo-900/40">
+                              <div>
+                                <div className="text-[9px] uppercase tracking-wider text-slate-400">
+                                  Historical Anomaly Rank
+                                </div>
+                                <div className="text-base font-bold text-indigo-300 flex items-center gap-1.5">
+                                  <span>P{mlScore.anomaly_percentile !== undefined ? mlScore.anomaly_percentile.toFixed(1) : '--'}</span>
+                                  <span className="text-[10px] font-normal text-slate-300">
+                                    ({(mlScore.anomaly_percentile ?? 0) >= 95 ? 'Unusual local pattern' : 'Consistent with baseline'})
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[9px] text-slate-400 uppercase tracking-wider">Baseline Deviation</div>
+                                <div className="text-xs font-bold text-slate-200">
+                                  {mlScore.baseline_robust_score !== undefined ? `${mlScore.baseline_robust_score.toFixed(2)}σ` : '--'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Synthetic Demo Warning Banner */}
+                            {mlScore.is_synthetic_demo && (
+                              <div className="rounded bg-amber-950/80 border border-amber-600/70 p-2 text-[10px] text-amber-200 font-sans flex items-start gap-1.5 leading-snug">
+                                <span className="text-amber-400 font-bold">⚠️</span>
+                                <div>
+                                  <strong className="text-amber-300">DEMONSTRATION ONLY:</strong> Synthetic reference baseline. Real multi-day historical AIS archive was unavailable; real-data fitting is blocked. Do not rely on for operational decisions.
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Comparison Features Table */}
+                            {mlScore.comparison_features && mlScore.comparison_features.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="text-[10px] text-slate-400 font-sans font-semibold">
+                                  Observed vs Historical Baseline (60m window):
+                                </div>
+                                <div className="overflow-x-auto rounded border border-slate-800 bg-[#060a14]">
+                                  <table className="w-full text-[10px] text-left">
+                                    <thead className="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+                                      <tr>
+                                        <th className="p-1.5 font-medium">Feature</th>
+                                        <th className="p-1.5 font-medium text-right">Observed</th>
+                                        <th className="p-1.5 font-medium text-right">Ref Median ± IQR</th>
+                                        <th className="p-1.5 font-medium text-right">Deviation</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/60 font-mono">
+                                      {mlScore.comparison_features.map((feat) => (
+                                        <tr key={feat.name} className="hover:bg-indigo-950/20">
+                                          <td className="p-1.5 text-slate-300 font-sans">{formatFeatureName(feat.name)}</td>
+                                          <td className="p-1.5 text-right text-cyan-300 font-bold">
+                                            {formatFeatureValue(feat.name, feat.value, feat.unit)}
+                                          </td>
+                                          <td className="p-1.5 text-right text-slate-400">
+                                            {formatFeatureValue(feat.name, feat.training_median, feat.unit)} ±{' '}
+                                            {formatFeatureValue(feat.name, feat.training_iqr, feat.unit)}
+                                          </td>
+                                          <td className={`p-1.5 text-right font-bold ${
+                                            feat.robust_deviation >= 3 ? 'text-rose-400' : feat.robust_deviation >= 1.5 ? 'text-amber-400' : 'text-slate-400'
+                                          }`}>
+                                            {feat.robust_deviation.toFixed(1)}× IQR
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Model Provenance Metadata */}
+                            <div className="rounded bg-slate-900/60 border border-slate-800 p-1.5 text-[9px] text-slate-400 space-y-0.5">
+                              <div className="flex justify-between">
+                                <span>Model ID: <b className="text-slate-300">{mlScore.model_id}</b></span>
+                                <span>Area/Class: <b className="text-slate-300">{mlScore.area_id} / {mlScore.class_group}</b></span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Track Window: <b className="text-slate-300">{mlScore.track_window?.span_minutes.toFixed(0)}m ({mlScore.track_window?.distinct_timestamps} fixes)</b></span>
+                                <span>Ref End: <b className="text-slate-300">{mlScore.training_end}</b></span>
+                              </div>
+                            </div>
+
+                            {/* Disclaimers & Boundaries */}
+                            <div className="text-[9px] text-slate-500 italic font-sans leading-normal border-t border-slate-800/80 pt-1">
+                              * Experimental second opinion: Historical anomaly assessment does not classify danger, anchor deployment, seabed contact, damage, or intent. Ordinary local patterns or AIS jitter may produce unusual scores. Alert queue order and ISR mission dispatch remain completely unaffected.
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded bg-slate-900/80 border border-slate-800 p-2 text-[10px] space-y-1 font-sans">
+                            <div className="flex items-center gap-1.5 text-slate-300 font-semibold font-mono">
+                              <span className="text-amber-400">ℹ️</span>
+                              <span>ML Shadow Comparison: {mlScore.status.toUpperCase()}</span>
+                            </div>
+                            <div className="text-slate-400 text-[10px] leading-relaxed">
+                              {mlScore.reason || 'Pattern comparison could not be computed for this vessel at the replay time.'}
+                            </div>
+                            {mlScore.details && (
+                              <div className="mt-1 bg-black/40 rounded p-1 text-[9px] text-slate-400 font-mono">
+                                {Object.entries(mlScore.details).map(([k, v]) => (
+                                  <div key={k}>{k}: <span className="text-slate-300">{String(v)}</span></div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="text-[9px] text-slate-500 italic">
+                              Quality gate requires ≥3 distinct fixes, ≥15m span, no gaps &gt;15m, and newest fix age ≤15m.
                             </div>
                           </div>
                         )}

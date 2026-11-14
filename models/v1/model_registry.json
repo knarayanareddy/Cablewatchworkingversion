@@ -1,0 +1,6 @@
+{
+  "registry_version": "v1",
+  "trusted_models": {
+    "bornholm:cargo": "models/v1/bornholm_cargo_synthetic.json"
+  }
+}
