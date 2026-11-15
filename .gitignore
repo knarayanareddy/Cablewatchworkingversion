@@ -22,6 +22,9 @@ work/*.sqlite
 !work/sample.sqlite
 !work/baltic_sample.sqlite
 !work/aisdk-2026-01-13_storebaelt_100k.sqlite
+!work/aisdk-2026-09-07_bornholm_sample.sqlite
+!work/aisdk-2026-01-13_fehmarn_5000k.sqlite
+!work/aisdk-2026-01-13_storebaelt_5000k.sqlite
 work/*.csv.gz
 !work/sample.csv.gz
 !work/baltic_sample.csv.gz
